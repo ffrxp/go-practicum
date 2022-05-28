@@ -14,31 +14,33 @@ type ShorterHandler struct {
 
 func (h ShorterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(r.URL.Query()) > 0 {
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "invalid URL", http.StatusBadRequest)
 		return
 	}
-	url_path := r.URL.Path
+	urlPath := r.URL.Path
 	switch r.Method {
 	case http.MethodGet:
 		path := strings.TrimPrefix(r.URL.Path, "/")
-
+		if strings.Contains(path, "/") {
+			http.Error(w, "URL contains invalid symbol", http.StatusBadRequest)
+		}
 		for origUrl, shortUrl := range h.converter {
 			if shortUrl == path {
-				w.Header().Set("location", origUrl)
+				w.Header().Set("Location", origUrl)
 				w.WriteHeader(307)
+				w.Write([]byte(origUrl))
 				return
 			}
 		}
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "Cannot find full URL for this short URL", http.StatusBadRequest)
 		return
 	case http.MethodPost:
-		if url_path != "/" {
-			w.WriteHeader(http.StatusBadRequest)
+		if urlPath != "/" {
+			http.Error(w, "invalid URL", http.StatusBadRequest)
 			return
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			//w.WriteHeader(http.StatusBadRequest)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -47,7 +49,7 @@ func (h ShorterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(201)
 		w.Write([]byte(shortUrl))
 	default:
-		w.WriteHeader(http.StatusBadRequest)
+		http.Error(w, "Unsupported HTTP method", http.StatusBadRequest)
 		return
 	}
 
@@ -60,8 +62,6 @@ func (h ShorterHandler) MakeShortURL(url string) string {
 
 func main() {
 	shorterHandler := ShorterHandler{make(map[string]string)}
-	testUrl := "ya.ru"
-	shorterHandler.converter[testUrl] = shorterHandler.MakeShortURL(testUrl)
 
 	server := &http.Server{
 		Handler: shorterHandler,
