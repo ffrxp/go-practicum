@@ -47,7 +47,8 @@ func (h ShorterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		shortUrl := h.MakeShortURL(string(body))
 		h.converter[string(body)] = shortUrl
 		w.WriteHeader(201)
-		w.Write([]byte(shortUrl))
+		outputFullShortURL := fmt.Sprintf("http://localhost:8080/%s", shortUrl)
+		w.Write([]byte(outputFullShortURL))
 	default:
 		http.Error(w, "Unsupported HTTP method", http.StatusBadRequest)
 		return
