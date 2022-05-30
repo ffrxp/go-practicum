@@ -10,95 +10,104 @@ import (
 	"testing"
 )
 
-func TestShorterHandler_ServeHTTP(t *testing.T) {
+func testRequest(t *testing.T, ts *httptest.Server, method, path string, body []byte) (*http.Response, string) {
+	req, err := http.NewRequest(method, ts.URL+path, bytes.NewBuffer(body))
+	require.NoError(t, err)
 
-	type postWant struct {
+	client := http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	resp, errDoReq := client.Do(req)
+	require.NoError(t, errDoReq)
+
+	respBody, errRead := ioutil.ReadAll(resp.Body)
+	require.NoError(t, errRead)
+
+	defer resp.Body.Close()
+
+	return resp, string(respBody)
+}
+
+func TestRouter(t *testing.T) {
+	type Want struct {
 		code     int
+		location string
 		response string
 	}
-	postTests := []struct {
+	Tests := []struct {
 		name   string
+		method string
 		target string
 		body   string
-		want   postWant
+		want   Want
 	}{
 		{
 			name:   "POST test #1",
+			method: "POST",
 			target: "/",
 			body:   "yandex.com",
-			want: postWant{
+			want: Want{
 				code:     201,
+				location: "",
 				response: `http://localhost:8080/1389853602`,
 			},
 		},
 		{
 			name:   "POST test #2",
+			method: "POST",
 			target: "/qwqwqqwqwqwqw",
 			body:   "yandex.com",
-			want: postWant{
+			want: Want{
 				code:     400,
-				response: "invalid URL\n",
+				location: "",
+				response: "",
 			},
 		},
-	}
-
-	type getWant struct {
-		code     int
-		location string
-		response string
-	}
-	getTests := []struct {
-		name   string
-		target string
-		body   string
-		want   getWant
-	}{
 		{
 			name:   "GET test #1",
+			method: "GET",
 			target: "/1389853602",
 			body:   "",
-			want: getWant{
+			want: Want{
 				code:     307,
-				location: `yandex.com`,
+				location: "yandex.com",
+				response: "",
+			},
+		},
+		{
+			name:   "GET test #2",
+			method: "GET",
+			target: "//%dfghdfkjghs/asadad",
+			body:   "",
+			want: Want{
+				code:     400,
+				location: "",
 				response: "",
 			},
 		},
 	}
 
-	sh := ShorterHandler{make(map[string]string)}
-	for _, tt := range postTests {
+	r := NewRouter()
+	ts := httptest.NewServer(r)
+	defer ts.Close()
+
+	for _, tt := range Tests {
 		t.Run(tt.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, tt.target, bytes.NewBuffer([]byte(tt.body)))
-			w := httptest.NewRecorder()
-			sh.ServeHTTP(w, request)
-			result := w.Result()
+			if tt.method != "GET" && tt.method != "POST" {
+				t.Fatal("Error. Unknown test method")
+			}
 
-			assert.Equal(t, tt.want.code, result.StatusCode)
+			resp, body := testRequest(t, ts, tt.method, tt.target, []byte(tt.body))
 
-			bodyContent, err := ioutil.ReadAll(result.Body)
-			require.NoError(t, err)
-			err = result.Body.Close()
-			require.NoError(t, err)
+			assert.Equal(t, tt.want.code, resp.StatusCode)
+			if tt.method == "GET" {
+				assert.Equal(t, tt.want.location, resp.Header.Get("location"))
+			}
+			assert.Equal(t, tt.want.response, body)
 
-			assert.Equal(t, tt.want.response, string(bodyContent))
-		})
-	}
-	for _, tt := range getTests {
-		t.Run(tt.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodGet, tt.target, bytes.NewBuffer([]byte(tt.body)))
-			w := httptest.NewRecorder()
-			sh.ServeHTTP(w, request)
-			result := w.Result()
-
-			assert.Equal(t, tt.want.code, result.StatusCode)
-			assert.Equal(t, tt.want.location, result.Header.Get("location"))
-
-			bodyContent, err := ioutil.ReadAll(result.Body)
-			require.NoError(t, err)
-			err = result.Body.Close()
-			require.NoError(t, err)
-
-			assert.Equal(t, tt.want.response, string(bodyContent))
 		})
 	}
 }
