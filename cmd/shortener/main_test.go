@@ -100,13 +100,13 @@ func TestRouter(t *testing.T) {
 				t.Fatal("Error. Unknown test method")
 			}
 
-			resp, body := testRequest(t, ts, tt.method, tt.target, []byte(tt.body))
+			resp, respBody := testRequest(t, ts, tt.method, tt.target, []byte(tt.body))
 
 			assert.Equal(t, tt.want.code, resp.StatusCode)
 			if tt.method == "GET" {
 				assert.Equal(t, tt.want.location, resp.Header.Get("location"))
 			}
-			assert.Equal(t, tt.want.response, body)
+			assert.Equal(t, tt.want.response, respBody)
 
 		})
 	}
