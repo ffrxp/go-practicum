@@ -28,7 +28,7 @@ func (h ShorterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if shortUrl == path {
 				w.Header().Set("Location", origUrl)
 				w.WriteHeader(307)
-				w.Write([]byte(origUrl))
+				//w.Write([]byte(origUrl))
 				return
 			}
 		}
