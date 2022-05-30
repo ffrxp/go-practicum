@@ -17,15 +17,14 @@ func getURL(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(paramURL, "/") {
 		http.Error(w, "URL contains invalid symbol", http.StatusBadRequest)
 	}
-	for origUrl, shortUrl := range converter {
-		if shortUrl == paramURL {
-			w.Header().Set("Location", origUrl)
+	for origURL, shortURL := range converter {
+		if shortURL == paramURL {
+			w.Header().Set("Location", origURL)
 			w.WriteHeader(307)
 			return
 		}
 	}
 	http.Error(w, "Cannot find full URL for this short URL", http.StatusBadRequest)
-	return
 }
 
 func postURL(w http.ResponseWriter, r *http.Request) {
@@ -34,16 +33,15 @@ func postURL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	shortUrl := MakeShortURL(string(body))
-	converter[string(body)] = shortUrl
+	shortURL := MakeShortURL(string(body))
+	converter[string(body)] = shortURL
 	w.WriteHeader(201)
-	outputFullShortURL := fmt.Sprintf("http://localhost:8080/%s", shortUrl)
+	outputFullShortURL := fmt.Sprintf("http://localhost:8080/%s", shortURL)
 	w.Write([]byte(outputFullShortURL))
 }
 
 func badRequest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(400)
-	return
 }
 
 func MakeShortURL(url string) string {
