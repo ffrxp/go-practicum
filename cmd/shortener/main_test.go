@@ -23,8 +23,6 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, content
 	resp, errDoReq := client.Do(req)
 	require.NoError(t, errDoReq)
 
-	defer resp.Body.Close()
-
 	respBody, errRead := ioutil.ReadAll(resp.Body)
 	require.NoError(t, errRead)
 
@@ -101,6 +99,7 @@ func TestRouter(t *testing.T) {
 			}
 
 			resp, respContent := testRequest(t, ts, tt.method, tt.target, []byte(tt.content))
+			defer resp.Body.Close()
 
 			assert.Equal(t, tt.want.code, resp.StatusCode)
 			if tt.method == "GET" {
