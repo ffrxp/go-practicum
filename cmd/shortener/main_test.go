@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +27,10 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, body []
 	respBody, errRead := ioutil.ReadAll(resp.Body)
 	require.NoError(t, errRead)
 
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		require.NoError(t, err)
+	}(resp.Body)
 
 	return resp, string(respBody)
 }
@@ -38,17 +42,17 @@ func TestRouter(t *testing.T) {
 		response string
 	}
 	Tests := []struct {
-		name   string
-		method string
-		target string
-		body   string
-		want   Want
+		name    string
+		method  string
+		target  string
+		content string
+		want    Want
 	}{
 		{
-			name:   "POST test #1",
-			method: "POST",
-			target: "/",
-			body:   "yandex.com",
+			name:    "POST test #1",
+			method:  "POST",
+			target:  "/",
+			content: "yandex.com",
 			want: Want{
 				code:     201,
 				location: "",
@@ -56,10 +60,10 @@ func TestRouter(t *testing.T) {
 			},
 		},
 		{
-			name:   "POST test #2",
-			method: "POST",
-			target: "/qwqwqqwqwqwqw",
-			body:   "yandex.com",
+			name:    "POST test #2",
+			method:  "POST",
+			target:  "/qwqwqqwqwqwqw",
+			content: "yandex.com",
 			want: Want{
 				code:     400,
 				location: "",
@@ -67,10 +71,10 @@ func TestRouter(t *testing.T) {
 			},
 		},
 		{
-			name:   "GET test #1",
-			method: "GET",
-			target: "/1389853602",
-			body:   "",
+			name:    "GET test #1",
+			method:  "GET",
+			target:  "/1389853602",
+			content: "",
 			want: Want{
 				code:     307,
 				location: "yandex.com",
@@ -78,10 +82,10 @@ func TestRouter(t *testing.T) {
 			},
 		},
 		{
-			name:   "GET test #2",
-			method: "GET",
-			target: "//%dfghdfkjghs/asadad",
-			body:   "",
+			name:    "GET test #2",
+			method:  "GET",
+			target:  "//%dfghdfkjghs/asadad",
+			content: "",
 			want: Want{
 				code:     400,
 				location: "",
@@ -100,13 +104,13 @@ func TestRouter(t *testing.T) {
 				t.Fatal("Error. Unknown test method")
 			}
 
-			resp, respBody := testRequest(t, ts, tt.method, tt.target, []byte(tt.body))
+			resp, contentResp := testRequest(t, ts, tt.method, tt.target, []byte(tt.content))
 
 			assert.Equal(t, tt.want.code, resp.StatusCode)
 			if tt.method == "GET" {
 				assert.Equal(t, tt.want.location, resp.Header.Get("location"))
 			}
-			assert.Equal(t, tt.want.response, respBody)
+			assert.Equal(t, tt.want.response, contentResp)
 
 		})
 	}
