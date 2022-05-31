@@ -4,15 +4,14 @@ import (
 	"bytes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-func testRequest(t *testing.T, ts *httptest.Server, method, path string, body []byte) (*http.Response, string) {
-	req, err := http.NewRequest(method, ts.URL+path, bytes.NewBuffer(body))
+func testRequest(t *testing.T, ts *httptest.Server, method, path string, content []byte) (*http.Response, string) {
+	req, err := http.NewRequest(method, ts.URL+path, bytes.NewBuffer(content))
 	require.NoError(t, err)
 
 	client := http.Client{
@@ -25,18 +24,13 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, body []
 	if errDoReq != nil {
 		t.Fatal(err)
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-	}(resp.Body)
 
 	respBody, errRead := ioutil.ReadAll(resp.Body)
 	if errRead != nil {
+		resp.Body.Close()
 		t.Fatal(err)
 	}
-
+	resp.Body.Close()
 	return resp, string(respBody)
 }
 
