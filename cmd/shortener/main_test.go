@@ -22,11 +22,11 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, content
 
 	resp, errDoReq := client.Do(req)
 	require.NoError(t, errDoReq)
-	
+
+	defer resp.Body.Close()
+
 	respBody, errRead := ioutil.ReadAll(resp.Body)
 	require.NoError(t, errRead)
-	err = resp.Body.Close()
-	require.NoError(t, err)
 
 	return resp, string(respBody)
 }
