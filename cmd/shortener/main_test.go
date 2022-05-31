@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
@@ -24,13 +26,18 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, content
 	if errDoReq != nil {
 		t.Fatal(err)
 	}
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			os.Exit(1)
+		}
+	}(resp.Body)
 
 	respBody, errRead := ioutil.ReadAll(resp.Body)
 	if errRead != nil {
-		resp.Body.Close()
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+
 	return resp, string(respBody)
 }
 
