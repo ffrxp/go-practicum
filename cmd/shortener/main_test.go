@@ -11,8 +11,7 @@ import (
 )
 
 func testRequest(t *testing.T, ts *httptest.Server, method, path string, content []byte) (*http.Response, string) {
-	req, err := http.NewRequest(method, ts.URL+path, bytes.NewBuffer(content))
-	require.NoError(t, err)
+	req := httptest.NewRequest(method, ts.URL+path, bytes.NewBuffer(content))
 
 	client := http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -88,15 +87,13 @@ func TestRouter(t *testing.T) {
 		},
 	}
 
-	r := NewRouter()
-	ts := httptest.NewServer(r)
+	sa := shortenerApp{storage: &memStorage{converter}}
+	ts := httptest.NewServer(newShortenerHandler(&sa))
 	defer ts.Close()
 
 	for _, tt := range Tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.method != "GET" && tt.method != "POST" {
-				t.Fatal("Error. Unknown test method")
-			}
+			require.ElementsMatch(t, tt.method, []string{"GET", "POST"})
 
 			resp, respContent := testRequest(t, ts, tt.method, tt.target, []byte(tt.content))
 			defer resp.Body.Close()
