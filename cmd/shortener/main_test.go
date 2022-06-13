@@ -10,10 +10,12 @@ import (
 	"testing"
 )
 
-func testRequest(t *testing.T, ts *httptest.Server, method, path string, content []byte) (*http.Response, string) {
+func testRequest(t *testing.T, ts *httptest.Server, method, contentType, path string, content []byte) (*http.Response, string) {
 	req, err := http.NewRequest(method, ts.URL+path, bytes.NewBuffer(content))
 	require.NoError(t, err)
-
+	if contentType != "" {
+		req.Header.Set("content-type", contentType)
+	}
 	client := http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -31,59 +33,82 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, content
 
 func TestRouter(t *testing.T) {
 	type Want struct {
-		code     int
-		location string
-		response string
+		code        int
+		location    string
+		contentType string
+		response    string
 	}
 	Tests := []struct {
-		name    string
-		method  string
-		target  string
-		content string
-		want    Want
+		name        string
+		method      string
+		target      string
+		content     string
+		contentType string
+		want        Want
 	}{
 		{
-			name:    "POST test #1",
-			method:  "POST",
-			target:  "/",
-			content: "yandex.com",
+			name:        "POST test #1",
+			method:      "POST",
+			target:      "/",
+			content:     "yandex.com",
+			contentType: "",
 			want: Want{
-				code:     201,
-				location: "",
-				response: `http://localhost:8080/1389853602`,
+				code:        201,
+				location:    "",
+				contentType: "",
+				response:    `http://localhost:8080/1389853602`,
 			},
 		},
 		{
-			name:    "POST test #2",
-			method:  "POST",
-			target:  "/qwqwqqwqwqwqw",
-			content: "yandex.com",
+			name:        "POST test #2",
+			method:      "POST",
+			target:      "/qwqwqqwqwqwqw",
+			content:     "yandex.com",
+			contentType: "",
 			want: Want{
-				code:     400,
-				location: "",
-				response: "",
+				code:        400,
+				location:    "",
+				contentType: "",
+				response:    "",
 			},
 		},
 		{
-			name:    "GET test #1",
-			method:  "GET",
-			target:  "/1389853602",
-			content: "",
+			name:        "GET test #1",
+			method:      "GET",
+			target:      "/1389853602",
+			content:     "",
+			contentType: "",
 			want: Want{
-				code:     307,
-				location: "yandex.com",
-				response: "",
+				code:        307,
+				location:    "yandex.com",
+				contentType: "",
+				response:    "",
 			},
 		},
 		{
-			name:    "GET test #2",
-			method:  "GET",
-			target:  "//%dfghdfkjghs/asadad",
-			content: "",
+			name:        "GET test #2",
+			method:      "GET",
+			target:      "//%dfghdfkjghs/asadad",
+			content:     "",
+			contentType: "",
 			want: Want{
-				code:     400,
-				location: "",
-				response: "",
+				code:        400,
+				location:    "",
+				contentType: "",
+				response:    "",
+			},
+		},
+		{
+			name:        "POST test #3 (JSON)",
+			method:      "POST",
+			target:      "/api/shorten",
+			content:     "{\"url\":\"ya.ru\"}",
+			contentType: "application/json",
+			want: Want{
+				code:        201,
+				location:    "",
+				contentType: "application/json",
+				response:    "{\"result\":\"http://localhost:8080/3201241320\"}",
 			},
 		},
 	}
@@ -96,10 +121,13 @@ func TestRouter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Contains(t, []string{"GET", "POST"}, tt.method)
 
-			resp, respContent := testRequest(t, ts, tt.method, tt.target, []byte(tt.content))
+			resp, respContent := testRequest(t, ts, tt.method, tt.contentType, tt.target, []byte(tt.content))
 			defer resp.Body.Close()
 
 			assert.Equal(t, tt.want.code, resp.StatusCode)
+			if tt.want.contentType != "" {
+				assert.Equal(t, tt.want.contentType, resp.Header.Get("content-type"))
+			}
 			if tt.method == "GET" {
 				assert.Equal(t, tt.want.location, resp.Header.Get("location"))
 			}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/go-chi/chi/v5"
@@ -76,6 +77,8 @@ func newShortenerHandler(sa *shortenerApp) *shortenerHandler {
 		app: sa,
 	}
 	h.Post("/", h.postURL())
+	h.Post("/api/shorten", h.postURL())
+	// TODO: move checking bad endpoints to handlers?
 	h.Post("/{.+}", h.badRequest())
 	h.Get("//", h.badRequest())
 	h.Get("//*", h.badRequest())
@@ -90,10 +93,48 @@ func (h *shortenerHandler) postURL() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		defer r.Body.Close()
+
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if r.URL.String() == "/api/shorten" {
+			ct := r.Header.Get("content-type")
+			if ct != "application/json" {
+				http.Error(w, "Invalid content type of request", http.StatusBadRequest)
+				return
+			}
+			requestParsedBody := struct {
+				URL string `json:"url"`
+			}{URL: ""}
+			if err := json.Unmarshal(body, &requestParsedBody); err != nil {
+				http.Error(w, "Cannot unmarshal JSON request", http.StatusBadRequest)
+				return
+			}
+			shortURL, errCreating := h.app.createShortURL(requestParsedBody.URL)
+			if errCreating != nil {
+				http.Error(w, errCreating.Error(), http.StatusBadRequest)
+				return
+			}
+			resultRespBody := struct {
+				Result string `json:"result"`
+			}{Result: shortURL}
+			resp, err := json.Marshal(resultRespBody)
+			if err != nil {
+				http.Error(w, "Cannot marshal JSON response", http.StatusBadRequest)
+				return
+			}
+
+			w.Header().Set("content-type", "application/json")
+			w.WriteHeader(201)
+			_, errWrite := w.Write(resp)
+			if errWrite != nil {
+				log.Printf("Writting error")
+				return
+			}
+			return
+		}
+
 		shortURL, errCreating := h.app.createShortURL(string(body))
 		if errCreating != nil {
 			http.Error(w, errCreating.Error(), http.StatusBadRequest)
