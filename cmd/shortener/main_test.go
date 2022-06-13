@@ -11,7 +11,8 @@ import (
 )
 
 func testRequest(t *testing.T, ts *httptest.Server, method, path string, content []byte) (*http.Response, string) {
-	req := httptest.NewRequest(method, ts.URL+path, bytes.NewBuffer(content))
+	req, err := http.NewRequest(method, ts.URL+path, bytes.NewBuffer(content))
+	require.NoError(t, err)
 
 	client := http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -93,7 +94,7 @@ func TestRouter(t *testing.T) {
 
 	for _, tt := range Tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.ElementsMatch(t, tt.method, []string{"GET", "POST"})
+			require.Contains(t, []string{"GET", "POST"}, tt.method)
 
 			resp, respContent := testRequest(t, ts, tt.method, tt.target, []byte(tt.content))
 			defer resp.Body.Close()

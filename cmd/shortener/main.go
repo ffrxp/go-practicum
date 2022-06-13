@@ -96,7 +96,7 @@ func (h *shortenerHandler) postURL() http.HandlerFunc {
 		}
 		shortURL, errCreating := h.app.createShortURL(string(body))
 		if errCreating != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, errCreating.Error(), http.StatusBadRequest)
 			return
 		}
 		w.WriteHeader(201)
