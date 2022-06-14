@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -46,7 +47,7 @@ func (sa *shortenerApp) createShortURL(url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	outputFullShortURL := fmt.Sprintf("http://localhost:8080/%s", shortURL)
+	outputFullShortURL := fmt.Sprintf("%s%s", GetBaseAddress(), shortURL)
 	return outputFullShortURL, nil
 }
 
@@ -171,9 +172,29 @@ func (h *shortenerHandler) badRequest() http.HandlerFunc {
 	}
 }
 
+const DefaultServerAddress = ":8080"
+const DefaultBaseAddress = "http://localhost:8080/"
+
+func GetServerAddress() string {
+	val, ok := os.LookupEnv("SERVER_ADDRESS")
+	if !ok || val == "" {
+		return DefaultServerAddress
+	}
+	return val
+}
+
+func GetBaseAddress() string {
+	val, ok := os.LookupEnv("BASE_URL")
+	if !ok || val == "" {
+		return DefaultBaseAddress
+	}
+	return val
+}
+
 var converter map[string]string = make(map[string]string)
 
 func main() {
+	fmt.Println(GetServerAddress())
 	sa := shortenerApp{storage: &memStorage{converter}}
-	log.Fatal(http.ListenAndServe(":8080", newShortenerHandler(&sa)))
+	log.Fatal(http.ListenAndServe(GetServerAddress(), newShortenerHandler(&sa)))
 }

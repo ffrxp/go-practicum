@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"io/ioutil"
@@ -56,7 +57,7 @@ func TestRouter(t *testing.T) {
 				code:        201,
 				location:    "",
 				contentType: "",
-				response:    `http://localhost:8080/1389853602`,
+				response:    fmt.Sprintf("%s1389853602", GetBaseAddress()),
 			},
 		},
 		{
@@ -108,7 +109,7 @@ func TestRouter(t *testing.T) {
 				code:        201,
 				location:    "",
 				contentType: "application/json",
-				response:    "{\"result\":\"http://localhost:8080/3201241320\"}",
+				response:    fmt.Sprintf("{\"result\":\"%s3201241320\"}", GetBaseAddress()),
 			},
 		},
 	}
