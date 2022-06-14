@@ -57,7 +57,7 @@ func TestRouter(t *testing.T) {
 				code:        201,
 				location:    "",
 				contentType: "",
-				response:    fmt.Sprintf("%s1389853602", GetBaseAddress()),
+				response:    fmt.Sprintf("%s/1389853602", GetBaseAddress()),
 			},
 		},
 		{
@@ -109,7 +109,7 @@ func TestRouter(t *testing.T) {
 				code:        201,
 				location:    "",
 				contentType: "application/json",
-				response:    fmt.Sprintf("{\"result\":\"%s3201241320\"}", GetBaseAddress()),
+				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", GetBaseAddress()),
 			},
 		},
 	}
