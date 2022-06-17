@@ -114,7 +114,11 @@ func TestRouter(t *testing.T) {
 		},
 	}
 
-	sa := shortenerApp{storage: &memStorage{converter}}
+	//sa := shortenerApp{storage: &dataStorage{converter}}
+	storagePath, _ := GetStoragePath()
+	storage := newDataStorage(storagePath)
+	defer storage.close()
+	sa := shortenerApp{storage: storage}
 	ts := httptest.NewServer(newShortenerHandler(&sa))
 	defer ts.Close()
 
