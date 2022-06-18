@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"hash/crc32"
@@ -93,7 +94,8 @@ func (ms *dataStorage) close() error {
 }
 
 type shortenerApp struct {
-	storage repository
+	storage     repository
+	baseAddress string
 }
 
 // Create short URL and return it in full version
@@ -103,7 +105,7 @@ func (sa *shortenerApp) createShortURL(url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	outputFullShortURL := fmt.Sprintf("%s/%s", GetBaseAddress(), shortURL)
+	outputFullShortURL := fmt.Sprintf("%s/%s", sa.baseAddress, shortURL)
 	return outputFullShortURL, nil
 }
 
@@ -123,6 +125,11 @@ func (sa *shortenerApp) makeShortURL(url string) string {
 	return fmt.Sprint(crc)
 }
 
+/*
+func (sa *shortenerApp) getBaseAddress() string {
+	return sa.baseAddress
+}
+*/
 type shortenerHandler struct {
 	*chi.Mux
 	app *shortenerApp
@@ -247,20 +254,24 @@ func GetBaseAddress() string {
 	return val
 }
 
-func GetStoragePath() (string, error) {
+func GetStoragePath() string {
 	path, ok := os.LookupEnv("FILE_STORAGE_PATH")
-	if !ok || path == "" {
-		return "", errors.New(`storage path doesn't set`)
+	if !ok {
+		return ""
 	}
-	return path, nil
+	return path
 }
 
 //var converter map[string]string = make(map[string]string)
 
 func main() {
-	storagePath, _ := GetStoragePath()
-	storage := newDataStorage(storagePath)
+	serverAddress := flag.String("a", GetServerAddress(), "Start server address.")
+	baseAddress := flag.String("b", GetBaseAddress(), "Base address for short URLs")
+	storagePath := flag.String("f", GetStoragePath(), "Path for storage of short URLs")
+	flag.Parse()
+
+	storage := newDataStorage(*storagePath)
 	defer storage.close()
-	sa := shortenerApp{storage: storage}
-	log.Fatal(http.ListenAndServe(GetServerAddress(), newShortenerHandler(&sa)))
+	sa := shortenerApp{storage: storage, baseAddress: *baseAddress}
+	log.Fatal(http.ListenAndServe(*serverAddress, newShortenerHandler(&sa)))
 }

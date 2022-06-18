@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,6 +34,10 @@ func testRequest(t *testing.T, ts *httptest.Server, method, contentType, path st
 }
 
 func TestRouter(t *testing.T) {
+	baseAddress := flag.String("b", GetBaseAddress(), "Base address for short URLs")
+	storagePath := flag.String("f", GetStoragePath(), "Path for storage of short URLs")
+	flag.Parse()
+
 	type Want struct {
 		code        int
 		location    string
@@ -57,7 +62,7 @@ func TestRouter(t *testing.T) {
 				code:        201,
 				location:    "",
 				contentType: "",
-				response:    fmt.Sprintf("%s/1389853602", GetBaseAddress()),
+				response:    fmt.Sprintf("%s/1389853602", *baseAddress),
 			},
 		},
 		{
@@ -109,16 +114,15 @@ func TestRouter(t *testing.T) {
 				code:        201,
 				location:    "",
 				contentType: "application/json",
-				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", GetBaseAddress()),
+				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", *baseAddress),
 			},
 		},
 	}
 
 	//sa := shortenerApp{storage: &dataStorage{converter}}
-	storagePath, _ := GetStoragePath()
-	storage := newDataStorage(storagePath)
+	storage := newDataStorage(*storagePath)
 	defer storage.close()
-	sa := shortenerApp{storage: storage}
+	sa := shortenerApp{storage: storage, baseAddress: *baseAddress}
 	ts := httptest.NewServer(newShortenerHandler(&sa))
 	defer ts.Close()
 
