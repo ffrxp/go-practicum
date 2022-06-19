@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -140,22 +141,62 @@ func newShortenerHandler(sa *shortenerApp) *shortenerHandler {
 		Mux: chi.NewMux(),
 		app: sa,
 	}
-	h.Post("/", h.postURL())
-	h.Post("/api/shorten", h.postURL())
-	// TODO: move checking bad endpoints to handlers?
+	h.Post("/", h.middlewareUnpacker(h.postURL()))
+	h.Post("/api/shorten", h.middlewareUnpacker(h.postURL()))
 	h.Post("/{.+}", h.badRequest())
 	h.Get("//", h.badRequest())
 	h.Get("//*", h.badRequest())
 	h.Get("//{}/*", h.badRequest())
 	h.Get("/{}/*", h.badRequest())
-	h.Get("/{shortURL}", h.getURL())
+	h.Get("/{shortURL}", h.middlewareUnpacker(h.getURL()))
 
 	return h
 }
 
+type gzipWriter struct {
+	http.ResponseWriter
+	Writer io.Writer
+}
+
+func (w gzipWriter) Write(b []byte) (int, error) {
+	return w.Writer.Write(b)
+}
+
+func (h *shortenerHandler) middlewareUnpacker(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			next(w, r)
+			return
+		}
+
+		gz, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
+		if err != nil {
+			io.WriteString(w, err.Error())
+			return
+		}
+		defer gz.Close()
+
+		w.Header().Set("Content-Encoding", "gzip")
+		next(gzipWriter{ResponseWriter: w, Writer: gz}, r)
+	}
+}
+
 func (h *shortenerHandler) postURL() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
+		var reader io.Reader
+
+		if r.Header.Get(`Content-Encoding`) == `gzip` {
+			gz, err := gzip.NewReader(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			reader = gz
+			defer gz.Close()
+		} else {
+			reader = r.Body
+		}
+		body, err := io.ReadAll(reader)
 		defer r.Body.Close()
 
 		if err != nil {
