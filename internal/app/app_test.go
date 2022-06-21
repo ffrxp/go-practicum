@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"bytes"
@@ -12,18 +12,28 @@ import (
 	"testing"
 )
 
+var (
+	baseAddress *string
+	storagePath *string
+)
+
+func init() {
+	baseAddress = flag.String("b", GetBaseAddress(), "Base address for short URLs")
+	storagePath = flag.String("f", GetStoragePath(), "Path for storage of short URLs")
+}
+
 func testRequest(t *testing.T, ts *httptest.Server, method, contentType, path string, content []byte) (*http.Response, string) {
 	req, err := http.NewRequest(method, ts.URL+path, bytes.NewBuffer(content))
 	require.NoError(t, err)
 	if contentType != "" {
 		req.Header.Set("content-type", contentType)
 	}
+
 	client := http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
-
 	resp, errDoReq := client.Do(req)
 	require.NoError(t, errDoReq)
 
@@ -33,14 +43,11 @@ func testRequest(t *testing.T, ts *httptest.Server, method, contentType, path st
 	return resp, string(respBody)
 }
 
-func TestRouter(t *testing.T) {
-	baseAddress := flag.String("b", GetBaseAddress(), "Base address for short URLs")
-	storagePath := flag.String("f", GetStoragePath(), "Path for storage of short URLs")
+func TestPOSTHandler(t *testing.T) {
 	flag.Parse()
 
 	type Want struct {
 		code        int
-		location    string
 		contentType string
 		response    string
 	}
@@ -60,7 +67,6 @@ func TestRouter(t *testing.T) {
 			contentType: "",
 			want: Want{
 				code:        201,
-				location:    "",
 				contentType: "",
 				response:    fmt.Sprintf("%s/1389853602", *baseAddress),
 			},
@@ -73,11 +79,65 @@ func TestRouter(t *testing.T) {
 			contentType: "",
 			want: Want{
 				code:        400,
-				location:    "",
 				contentType: "",
 				response:    "",
 			},
 		},
+		{
+			name:        "POST test #3 (JSON)",
+			method:      "POST",
+			target:      "/api/shorten",
+			content:     "{\"url\":\"ya.ru\"}",
+			contentType: "application/json",
+			want: Want{
+				code:        201,
+				contentType: "application/json",
+				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", *baseAddress),
+			},
+		},
+	}
+
+	storage := NewDataStorage(*storagePath)
+	defer storage.Close()
+	sa := ShortenerApp{Storage: storage, BaseAddress: *baseAddress}
+	h := NewShortenerHandler(&sa)
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+
+	for _, tt := range Tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, "POST", tt.method)
+
+			resp, respContent := testRequest(t, ts, tt.method, tt.contentType, tt.target, []byte(tt.content))
+			defer resp.Body.Close()
+
+			assert.Equal(t, tt.want.code, resp.StatusCode)
+			if tt.want.contentType != "" {
+				assert.Equal(t, tt.want.contentType, resp.Header.Get("content-type"))
+			}
+			assert.Equal(t, tt.want.response, respContent)
+
+		})
+	}
+}
+
+func TestGETHandler(t *testing.T) {
+	flag.Parse()
+
+	type Want struct {
+		code        int
+		location    string
+		contentType string
+		response    string
+	}
+	Tests := []struct {
+		name        string
+		method      string
+		target      string
+		content     string
+		contentType string
+		want        Want
+	}{
 		{
 			name:        "GET test #1",
 			method:      "GET",
@@ -104,31 +164,18 @@ func TestRouter(t *testing.T) {
 				response:    "",
 			},
 		},
-		{
-			name:        "POST test #3 (JSON)",
-			method:      "POST",
-			target:      "/api/shorten",
-			content:     "{\"url\":\"ya.ru\"}",
-			contentType: "application/json",
-			want: Want{
-				code:        201,
-				location:    "",
-				contentType: "application/json",
-				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", *baseAddress),
-			},
-		},
 	}
 
-	//sa := shortenerApp{storage: &dataStorage{converter}}
-	storage := newDataStorage(*storagePath)
-	defer storage.close()
-	sa := shortenerApp{storage: storage, baseAddress: *baseAddress}
-	ts := httptest.NewServer(newShortenerHandler(&sa))
+	storage := NewDataStorage(*storagePath)
+	defer storage.Close()
+	sa := ShortenerApp{Storage: storage, BaseAddress: *baseAddress}
+	h := NewShortenerHandler(&sa)
+	ts := httptest.NewServer(h)
 	defer ts.Close()
 
 	for _, tt := range Tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Contains(t, []string{"GET", "POST"}, tt.method)
+			require.Equal(t, "GET", tt.method)
 
 			resp, respContent := testRequest(t, ts, tt.method, tt.contentType, tt.target, []byte(tt.content))
 			defer resp.Body.Close()
@@ -137,9 +184,7 @@ func TestRouter(t *testing.T) {
 			if tt.want.contentType != "" {
 				assert.Equal(t, tt.want.contentType, resp.Header.Get("content-type"))
 			}
-			if tt.method == "GET" {
-				assert.Equal(t, tt.want.location, resp.Header.Get("location"))
-			}
+			assert.Equal(t, tt.want.location, resp.Header.Get("location"))
 			assert.Equal(t, tt.want.response, respContent)
 
 		})
