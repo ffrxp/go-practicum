@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"go-practicum/internal/app"
+	"github.com/ffrxp/go-practicum/internal/app"
 	"log"
 	"net/http"
 )
