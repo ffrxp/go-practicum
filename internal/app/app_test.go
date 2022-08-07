@@ -28,6 +28,7 @@ func testRequest(t *testing.T, ts *httptest.Server, method, contentType, path st
 	require.NoError(t, errDoReq)
 
 	respBody, errRead := ioutil.ReadAll(resp.Body)
+
 	require.NoError(t, errRead)
 
 	return resp, string(respBody)
@@ -52,6 +53,19 @@ func TestRouter(t *testing.T) {
 		contentType string
 		want        Want
 	}{
+		{
+			name:        "GET test #1",
+			method:      "GET",
+			target:      "/api/user/urls",
+			content:     "",
+			contentType: "",
+			want: Want{
+				code:        204,
+				location:    "",
+				contentType: "",
+				response:    "",
+			},
+		},
 		{
 			name:        "POST test #1",
 			method:      "POST",
@@ -79,7 +93,7 @@ func TestRouter(t *testing.T) {
 			},
 		},
 		{
-			name:        "GET test #1",
+			name:        "GET test #2",
 			method:      "GET",
 			target:      "/1389853602",
 			content:     "",
@@ -92,7 +106,7 @@ func TestRouter(t *testing.T) {
 			},
 		},
 		{
-			name:        "GET test #2",
+			name:        "GET test #3",
 			method:      "GET",
 			target:      "//%dfghdfkjghs/asadad",
 			content:     "",
@@ -145,3 +159,9 @@ func TestRouter(t *testing.T) {
 		})
 	}
 }
+
+/*
+func TestCookie(t *testing.T) {
+
+
+}*/

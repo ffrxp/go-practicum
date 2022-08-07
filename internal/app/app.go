@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -12,9 +13,9 @@ type ShortenerApp struct {
 }
 
 // Create short URL and return it in full version
-func (sa *ShortenerApp) createShortURL(url string) (string, error) {
+func (sa *ShortenerApp) createShortURL(url, userID string) (string, error) {
 	shortURL := sa.makeShortURL(url)
-	err := sa.Storage.addItem(url, shortURL)
+	err := sa.Storage.addItem(url, shortURL, userID)
 	if err != nil {
 		return "", err
 	}
@@ -31,6 +32,23 @@ func (sa *ShortenerApp) getOrigURL(shortURL string) (string, error) {
 		return "", err
 	}
 	return origURL, nil
+}
+
+func (sa *ShortenerApp) getHistoryURLsForUser(userID string) ([]byte, error) {
+	history := sa.Storage.getUserHistory(userID)
+	historyByJSON, err := json.Marshal(history)
+	if err != nil {
+		return make([]byte, 0), err
+	}
+	return historyByJSON, nil
+}
+
+func (sa *ShortenerApp) userHaveHistoryURLs(userID string) bool {
+	history := sa.Storage.getUserHistory(userID)
+	if len(history) == 0 {
+		return false
+	}
+	return true
 }
 
 func (sa *ShortenerApp) makeShortURL(url string) string {
