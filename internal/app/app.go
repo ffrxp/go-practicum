@@ -45,10 +45,7 @@ func (sa *ShortenerApp) getHistoryURLsForUser(userID string) ([]byte, error) {
 
 func (sa *ShortenerApp) userHaveHistoryURLs(userID string) bool {
 	history := sa.Storage.getUserHistory(userID)
-	if len(history) == 0 {
-		return false
-	}
-	return true
+	return len(history) != 0
 }
 
 func (sa *ShortenerApp) makeShortURL(url string) string {

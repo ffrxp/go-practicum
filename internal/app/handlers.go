@@ -299,9 +299,7 @@ func (h *shortenerHandler) getURL() http.HandlerFunc {
 			}
 			expectedToken := GetUserToken(curCookieValue.UserID)
 			signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
-			if hmac.Equal(curCookieValue.Token, signedExpectedToken) {
-				userID = curCookieValue.UserID
-			} else {
+			if !hmac.Equal(curCookieValue.Token, signedExpectedToken) {
 				userCookie, err = h.createCookie(cookieName, userID)
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -434,9 +432,7 @@ func (h *shortenerHandler) badRequest() http.HandlerFunc {
 			}
 			expectedToken := GetUserToken(curCookieValue.UserID)
 			signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
-			if hmac.Equal(curCookieValue.Token, signedExpectedToken) {
-				userID = curCookieValue.UserID
-			} else {
+			if !hmac.Equal(curCookieValue.Token, signedExpectedToken) {
 				userCookie, err = h.createCookie(cookieName, userID)
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusInternalServerError)

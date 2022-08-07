@@ -92,8 +92,8 @@ func (ms *dataStorage) addItemUserHistory(id, value, userID string) {
 	history, ok := ms.userHistoryStorage[userID]
 	if ok {
 		found := false
-		for i, _ := range history {
-			if history[i].ShortURL == id && history[i].OrigURL == value {
+		for _, historyElem := range history {
+			if historyElem.ShortURL == id && historyElem.OrigURL == value {
 				found = true
 				break
 			}
