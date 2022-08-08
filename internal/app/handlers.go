@@ -363,7 +363,7 @@ func (h *shortenerHandler) returnUserURLs() http.HandlerFunc {
 
 		http.SetCookie(w, userCookie)
 		w.Header().Set("content-type", "application/json")
-		w.WriteHeader(201)
+		w.WriteHeader(200)
 		_, errWrite := w.Write(history)
 		if errWrite != nil {
 			log.Printf("Writting error")
