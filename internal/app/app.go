@@ -13,7 +13,7 @@ type ShortenerApp struct {
 }
 
 // Create short URL and return it in full version
-func (sa *ShortenerApp) createShortURL(url, userID string) (string, error) {
+func (sa *ShortenerApp) createShortURL(url string, userID int) (string, error) {
 	shortURL := sa.makeShortURL(url)
 	err := sa.Storage.addItem(url, shortURL, userID)
 	if err != nil {
@@ -34,7 +34,7 @@ func (sa *ShortenerApp) getOrigURL(shortURL string) (string, error) {
 	return origURL, nil
 }
 
-func (sa *ShortenerApp) getHistoryURLsForUser(userID string) ([]byte, error) {
+func (sa *ShortenerApp) getHistoryURLsForUser(userID int) ([]byte, error) {
 	history := sa.Storage.getUserHistory(userID)
 	historyByJSON, err := json.Marshal(history)
 	if err != nil {
@@ -43,7 +43,7 @@ func (sa *ShortenerApp) getHistoryURLsForUser(userID string) ([]byte, error) {
 	return historyByJSON, nil
 }
 
-func (sa *ShortenerApp) userHaveHistoryURLs(userID string) bool {
+func (sa *ShortenerApp) userHaveHistoryURLs(userID int) bool {
 	history := sa.Storage.getUserHistory(userID)
 	return len(history) != 0
 }

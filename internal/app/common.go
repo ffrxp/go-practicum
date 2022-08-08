@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"strconv"
 )
-import "crypto/rand"
 
 const DefaultServerAddress = ":8080"
 const DefaultBaseAddress = "http://localhost:8080"
@@ -36,16 +36,6 @@ func GetStoragePath() string {
 	return path
 }
 
-func GenerateRandom(size int) ([]byte, error) {
-	b := make([]byte, size)
-	_, err := rand.Read(b)
-	if err != nil {
-		return nil, err
-	}
-
-	return b, nil
-}
-
 func SignMsg(msg []byte, key []byte) []byte {
 	h := hmac.New(sha256.New, key)
 	h.Write(msg)
@@ -53,16 +43,8 @@ func SignMsg(msg []byte, key []byte) []byte {
 	return dst
 }
 
-func GetUserToken(UID string) string {
+func GetUserToken(UID int) string {
 	// Make token. It is learning realization, so token will be not enough secured for real implementation
-	return fmt.Sprintf("token%s", string(UID))
-}
-
-func CheckSign(msg []byte, sign []byte, key []byte) bool {
-	checkingSign := SignMsg(msg, key)
-	if hmac.Equal(sign, checkingSign) {
-		return true
-	} else {
-		return false
-	}
+	strUID := strconv.Itoa(UID)
+	return fmt.Sprintf("token%s", strUID)
 }

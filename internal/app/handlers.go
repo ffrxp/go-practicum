@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
@@ -30,7 +31,6 @@ func NewShortenerHandler(sa *ShortenerApp) *shortenerHandler {
 	h.Mux.MethodNotAllowed(h.badRequest())
 	h.Get("/{shortURL}", h.middlewareUnpacker(h.getURL()))
 	h.Get("/api/user/urls", h.middlewareUnpacker(h.returnUserURLs()))
-
 	h.secKey = []byte("some_secret_key")
 	return h
 }
@@ -45,7 +45,7 @@ func (w gzipWriter) Write(b []byte) (int, error) {
 }
 
 type CookieData struct {
-	UserID string
+	UserID int
 	Token  []byte
 }
 
@@ -70,12 +70,7 @@ func (h *shortenerHandler) middlewareUnpacker(next http.HandlerFunc) http.Handle
 
 func (h *shortenerHandler) postURLCommon() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		generatedUserID, err := GenerateRandom(4)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		userID := string(generatedUserID)
+		userID := rand.Int()
 
 		// Process cookies
 		cookieName := "token"
@@ -85,7 +80,6 @@ func (h *shortenerHandler) postURLCommon() http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-
 			userCookie, err = h.createCookie(cookieName, userID)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -156,12 +150,7 @@ func (h *shortenerHandler) postURLCommon() http.HandlerFunc {
 
 func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		generatedUserID, err := GenerateRandom(4)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		userID := string(generatedUserID)
+		userID := rand.Int()
 
 		// Process cookies
 		cookieName := "token"
@@ -263,12 +252,7 @@ func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 
 func (h *shortenerHandler) getURL() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		generatedUserID, err := GenerateRandom(4)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		userID := string(generatedUserID)
+		userID := rand.Int()
 
 		// Process cookies
 		cookieName := "token"
@@ -325,12 +309,7 @@ func (h *shortenerHandler) getURL() http.HandlerFunc {
 
 func (h *shortenerHandler) returnUserURLs() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		generatedUserID, err := GenerateRandom(4)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		userID := string(generatedUserID)
+		userID := rand.Int()
 
 		// Process cookies
 		cookieName := "token"
@@ -340,7 +319,6 @@ func (h *shortenerHandler) returnUserURLs() http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-
 			userCookie, err = h.createCookie(cookieName, userID)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -348,7 +326,6 @@ func (h *shortenerHandler) returnUserURLs() http.HandlerFunc {
 			}
 		} else {
 			// Checking sign of cookie
-
 			curCookieValue := CookieData{}
 			cookieValueUnescaped, err := url.QueryUnescape(userCookie.Value)
 			if err != nil {
@@ -362,6 +339,7 @@ func (h *shortenerHandler) returnUserURLs() http.HandlerFunc {
 			}
 			expectedToken := GetUserToken(curCookieValue.UserID)
 			signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
+
 			if hmac.Equal(curCookieValue.Token, signedExpectedToken) {
 				userID = curCookieValue.UserID
 			} else {
@@ -396,12 +374,7 @@ func (h *shortenerHandler) returnUserURLs() http.HandlerFunc {
 
 func (h *shortenerHandler) badRequest() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		generatedUserID, err := GenerateRandom(4)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		userID := string(generatedUserID)
+		userID := rand.Int()
 
 		// Process cookies
 		cookieName := "token"
@@ -445,7 +418,7 @@ func (h *shortenerHandler) badRequest() http.HandlerFunc {
 	}
 }
 
-func (h *shortenerHandler) createCookie(cookieName, userID string) (*http.Cookie, error) {
+func (h *shortenerHandler) createCookie(cookieName string, userID int) (*http.Cookie, error) {
 	token := GetUserToken(userID)
 	signedToken := SignMsg([]byte(token), h.secKey)
 
@@ -458,5 +431,6 @@ func (h *shortenerHandler) createCookie(cookieName, userID string) (*http.Cookie
 		Value:  url.QueryEscape(string(JSONCookieBody)),
 		MaxAge: 1200,
 	}
+
 	return userCookie, nil
 }

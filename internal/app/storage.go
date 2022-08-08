@@ -8,9 +8,9 @@ import (
 )
 
 type repository interface {
-	addItem(id, value, userID string) error
+	addItem(id string, value string, userID int) error
 	getItem(value string) (string, error)
-	getUserHistory(userID string) []URLConversion
+	getUserHistory(userID int) []URLConversion
 }
 
 type sourceFileManager struct {
@@ -25,32 +25,32 @@ type URLConversion struct {
 }
 
 type dataStorage struct {
-	userHistoryStorage map[string][]URLConversion
+	userHistoryStorage map[int][]URLConversion
 	storage            map[string]string
 	sfm                *sourceFileManager
 }
 
 func NewDataStorage(source string) *dataStorage {
 	if source == "" {
-		return &dataStorage{make(map[string][]URLConversion), make(map[string]string), nil}
+		return &dataStorage{make(map[int][]URLConversion), make(map[string]string), nil}
 	}
 	file, err := os.OpenFile(source, os.O_RDWR|os.O_CREATE, 0777)
 	if err != nil {
 		log.Printf("Cannot open data file")
-		return &dataStorage{make(map[string][]URLConversion), make(map[string]string), nil}
+		return &dataStorage{make(map[int][]URLConversion), make(map[string]string), nil}
 	}
 	sfm := sourceFileManager{
 		file:    file,
 		encoder: json.NewEncoder(file),
 		decoder: json.NewDecoder(file)}
-	ds := dataStorage{make(map[string][]URLConversion), map[string]string{}, &sfm}
+	ds := dataStorage{make(map[int][]URLConversion), map[string]string{}, &sfm}
 	if err := ds.loadItems(); err != nil {
 		return &ds
 	}
 	return &ds
 }
 
-func (ms *dataStorage) addItem(id, value, userID string) error {
+func (ms *dataStorage) addItem(id string, value string, userID int) error {
 	ms.storage[id] = value
 	if ms.sfm != nil {
 		if err := ms.sfm.file.Truncate(0); err != nil {
@@ -63,9 +63,10 @@ func (ms *dataStorage) addItem(id, value, userID string) error {
 			return err
 		}
 	}
-	if userID != "" {
+	/*if userID != "" {
 		ms.addItemUserHistory(id, value, userID)
-	}
+	}*/
+	ms.addItemUserHistory(id, value, userID)
 	return nil
 }
 
@@ -88,7 +89,7 @@ func (ms *dataStorage) loadItems() error {
 	return nil
 }
 
-func (ms *dataStorage) addItemUserHistory(id, value, userID string) {
+func (ms *dataStorage) addItemUserHistory(id string, value string, userID int) {
 	history, ok := ms.userHistoryStorage[userID]
 	if ok {
 		found := false
@@ -108,7 +109,7 @@ func (ms *dataStorage) addItemUserHistory(id, value, userID string) {
 	ms.userHistoryStorage[userID] = append(ms.userHistoryStorage[userID], URLConversion{id, value})
 }
 
-func (ms *dataStorage) getUserHistory(userID string) []URLConversion {
+func (ms *dataStorage) getUserHistory(userID int) []URLConversion {
 	history, ok := ms.userHistoryStorage[userID]
 	if !ok {
 		return make([]URLConversion, 0)
