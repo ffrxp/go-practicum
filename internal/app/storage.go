@@ -94,7 +94,7 @@ func (ms *dataStorage) addItemUserHistory(id string, value string, userID int) {
 	if ok {
 		found := false
 		for _, historyElem := range history {
-			if historyElem.ShortURL == id && historyElem.OrigURL == value {
+			if historyElem.ShortURL == value && historyElem.OrigURL == id {
 				found = true
 				break
 			}
@@ -102,11 +102,11 @@ func (ms *dataStorage) addItemUserHistory(id string, value string, userID int) {
 		if found {
 			return
 		}
-		URLConv := URLConversion{id, value}
+		URLConv := URLConversion{value, id}
 		ms.userHistoryStorage[userID] = append(ms.userHistoryStorage[userID], URLConv)
 	}
 	ms.userHistoryStorage[userID] = make([]URLConversion, 0)
-	ms.userHistoryStorage[userID] = append(ms.userHistoryStorage[userID], URLConversion{id, value})
+	ms.userHistoryStorage[userID] = append(ms.userHistoryStorage[userID], URLConversion{value, id})
 }
 
 func (ms *dataStorage) getUserHistory(userID int) []URLConversion {

@@ -159,9 +159,3 @@ func TestRouter(t *testing.T) {
 		})
 	}
 }
-
-/*
-func TestCookie(t *testing.T) {
-
-
-}*/

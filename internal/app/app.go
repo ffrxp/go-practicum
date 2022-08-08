@@ -36,6 +36,10 @@ func (sa *ShortenerApp) getOrigURL(shortURL string) (string, error) {
 
 func (sa *ShortenerApp) getHistoryURLsForUser(userID int) ([]byte, error) {
 	history := sa.Storage.getUserHistory(userID)
+	for i := 0; i < len(history); i++ {
+		FullShortURL := fmt.Sprintf("%s/%s", sa.BaseAddress, history[i].ShortURL)
+		history[i].ShortURL = FullShortURL
+	}
 	historyByJSON, err := json.Marshal(history)
 	if err != nil {
 		return make([]byte, 0), err
