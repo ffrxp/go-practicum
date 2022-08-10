@@ -2,10 +2,12 @@ package app
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/hmac"
 	"encoding/json"
 	"errors"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v4/pgxpool"
 	"io"
 	"log"
 	"math/rand"
@@ -31,6 +33,8 @@ func NewShortenerHandler(sa *ShortenerApp) *shortenerHandler {
 	h.Mux.MethodNotAllowed(h.badRequest())
 	h.Get("/{shortURL}", h.middlewareUnpacker(h.getURL()))
 	h.Get("/api/user/urls", h.middlewareUnpacker(h.returnUserURLs()))
+	h.Get("/ping", h.middlewareUnpacker(h.pingToDB()))
+
 	h.secKey = []byte("some_secret_key")
 	return h
 }
@@ -415,6 +419,58 @@ func (h *shortenerHandler) badRequest() http.HandlerFunc {
 		}
 		http.SetCookie(w, userCookie)
 		w.WriteHeader(400)
+	}
+}
+
+func (h *shortenerHandler) pingToDB() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := rand.Int()
+
+		// Process cookies
+		cookieName := "token"
+		userCookie, err := r.Cookie(cookieName)
+		if err != nil {
+			if !errors.Is(err, http.ErrNoCookie) {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			userCookie, err = h.createCookie(cookieName, userID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			// Checking sign of cookie
+			curCookieValue := CookieData{}
+			cookieValueUnescaped, err := url.QueryUnescape(userCookie.Value)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			err = json.Unmarshal([]byte(cookieValueUnescaped), &curCookieValue)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			expectedToken := GetUserToken(curCookieValue.UserID)
+			signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
+			if !hmac.Equal(curCookieValue.Token, signedExpectedToken) {
+				userCookie, err = h.createCookie(cookieName, userID)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+			}
+		}
+		http.SetCookie(w, userCookie)
+		dbpool, err := pgxpool.Connect(context.Background(), h.app.DatabasePath)
+		if err != nil {
+			w.WriteHeader(500)
+			return
+		}
+		defer dbpool.Close()
+		w.WriteHeader(200)
 	}
 }
 

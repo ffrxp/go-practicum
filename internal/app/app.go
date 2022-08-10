@@ -8,8 +8,9 @@ import (
 )
 
 type ShortenerApp struct {
-	Storage     repository
-	BaseAddress string
+	Storage      repository
+	BaseAddress  string
+	DatabasePath string
 }
 
 // Create short URL and return it in full version

@@ -36,6 +36,14 @@ func GetStoragePath() string {
 	return path
 }
 
+func GetDatabasePath() string {
+	path, ok := os.LookupEnv("DATABASE_DSN")
+	if !ok {
+		return ""
+	}
+	return path
+}
+
 func SignMsg(msg []byte, key []byte) []byte {
 	h := hmac.New(sha256.New, key)
 	h.Write(msg)
