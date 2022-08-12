@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"github.com/ffrxp/go-practicum/internal/app"
 	"log"
 	"net/http"
@@ -24,7 +23,7 @@ func main() {
 				DatabasePath: *databasePath}
 			log.Fatal(http.ListenAndServe(*serverAddress, app.NewShortenerHandler(&sa)))
 		}
-		log.Printf(fmt.Sprintf("Can't connect to database or init tables. Error:%s", err.Error()))
+		log.Printf("Can't connect to database or init tables. Error:%s", err.Error())
 		dataStorage := app.NewDataStorage(*storagePath)
 		defer dataStorage.Close()
 		sa := app.ShortenerApp{Storage: dataStorage,
