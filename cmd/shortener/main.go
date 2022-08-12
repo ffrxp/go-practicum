@@ -17,14 +17,14 @@ func main() {
 
 	if *databasePath != "" {
 		storage, err := app.NewDatabaseStorage(*databasePath)
-		defer storage.Close()
 		if err == nil {
+			defer storage.Close()
 			sa := app.ShortenerApp{Storage: storage,
 				BaseAddress:  *baseAddress,
 				DatabasePath: *databasePath}
 			log.Fatal(http.ListenAndServe(*serverAddress, app.NewShortenerHandler(&sa)))
 		}
-		log.Println(fmt.Sprintf("Can't connect to database or init tables. Error:%s", err.Error()))
+		log.Printf(fmt.Sprintf("Can't connect to database or init tables. Error:%s", err.Error()))
 		dataStorage := app.NewDataStorage(*storagePath)
 		defer dataStorage.Close()
 		sa := app.ShortenerApp{Storage: dataStorage,
