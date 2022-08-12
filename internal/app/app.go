@@ -8,7 +8,7 @@ import (
 )
 
 type ShortenerApp struct {
-	Storage      repository
+	Storage      Repository
 	BaseAddress  string
 	DatabasePath string
 }
@@ -36,7 +36,10 @@ func (sa *ShortenerApp) getOrigURL(shortURL string) (string, error) {
 }
 
 func (sa *ShortenerApp) getHistoryURLsForUser(userID int) ([]byte, error) {
-	history := sa.Storage.getUserHistory(userID)
+	history, err := sa.Storage.getUserHistory(userID)
+	if err != nil {
+		return make([]byte, 0), err
+	}
 	for i := 0; i < len(history); i++ {
 		FullShortURL := fmt.Sprintf("%s/%s", sa.BaseAddress, history[i].ShortURL)
 		history[i].ShortURL = FullShortURL
@@ -48,9 +51,9 @@ func (sa *ShortenerApp) getHistoryURLsForUser(userID int) ([]byte, error) {
 	return historyByJSON, nil
 }
 
-func (sa *ShortenerApp) userHaveHistoryURLs(userID int) bool {
-	history := sa.Storage.getUserHistory(userID)
-	return len(history) != 0
+func (sa *ShortenerApp) userHaveHistoryURLs(userID int) (bool, error) {
+	history, err := sa.Storage.getUserHistory(userID)
+	return len(history) != 0, err
 }
 
 func (sa *ShortenerApp) makeShortURL(url string) string {

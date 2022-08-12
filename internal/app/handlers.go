@@ -74,7 +74,7 @@ func (h *shortenerHandler) middlewareUnpacker(next http.HandlerFunc) http.Handle
 
 func (h *shortenerHandler) postURLCommon() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := rand.Int()
+		userID := int(rand.Int31())
 
 		// Process cookies
 		cookieName := "token"
@@ -154,7 +154,7 @@ func (h *shortenerHandler) postURLCommon() http.HandlerFunc {
 
 func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := rand.Int()
+		userID := int(rand.Int31())
 
 		// Process cookies
 		cookieName := "token"
@@ -256,7 +256,7 @@ func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 
 func (h *shortenerHandler) getURL() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := rand.Int()
+		userID := int(rand.Int31())
 
 		// Process cookies
 		cookieName := "token"
@@ -313,7 +313,7 @@ func (h *shortenerHandler) getURL() http.HandlerFunc {
 
 func (h *shortenerHandler) returnUserURLs() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := rand.Int()
+		userID := int(rand.Int31())
 
 		// Process cookies
 		cookieName := "token"
@@ -354,7 +354,12 @@ func (h *shortenerHandler) returnUserURLs() http.HandlerFunc {
 				}
 			}
 		}
-		if !h.app.userHaveHistoryURLs(userID) {
+		userHaveHistoryURLs, err := h.app.userHaveHistoryURLs(userID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !userHaveHistoryURLs {
 			http.SetCookie(w, userCookie)
 			w.WriteHeader(204)
 			return
@@ -378,7 +383,7 @@ func (h *shortenerHandler) returnUserURLs() http.HandlerFunc {
 
 func (h *shortenerHandler) badRequest() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := rand.Int()
+		userID := int(rand.Int31())
 
 		// Process cookies
 		cookieName := "token"
@@ -424,7 +429,7 @@ func (h *shortenerHandler) badRequest() http.HandlerFunc {
 
 func (h *shortenerHandler) pingToDB() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := rand.Int()
+		userID := int(rand.Int31())
 
 		// Process cookies
 		cookieName := "token"
