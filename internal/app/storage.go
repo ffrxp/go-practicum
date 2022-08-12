@@ -206,15 +206,15 @@ func (dbs *databaseStorage) addItemUserHistory(id string, value string, userID i
 }
 
 func (dbs *databaseStorage) getItem(value string) (string, error) {
-	var shortUrl string
-	err := dbs.pool.QueryRow(context.Background(), "SELECT orig_url FROM convertions WHERE short_url = $1", value).Scan(&shortUrl)
+	var shortURL string
+	err := dbs.pool.QueryRow(context.Background(), "SELECT orig_url FROM convertions WHERE short_url = $1", value).Scan(&shortURL)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", errors.New("not found")
 		}
 		return "", err
 	}
-	return shortUrl, nil
+	return shortURL, nil
 }
 
 func (dbs *databaseStorage) getUserHistory(userID int) (History, error) {
