@@ -59,12 +59,12 @@ type BatchResponse []BatchResponseElem
 type BatchAnswer []BatchAnswerElem
 
 type BatchResponseElem struct {
-	CorrelationId string `json:"correlation_id"`
+	CorrelationID string `json:"correlation_id"`
 	OriginalURL   string `json:"original_url"`
 }
 
 type BatchAnswerElem struct {
-	CorrelationId string `json:"correlation_id"`
+	CorrelationID string `json:"correlation_id"`
 	ShortURL      string `json:"short_url"`
 }
 
@@ -354,7 +354,7 @@ func (h *shortenerHandler) postURLBatch() http.HandlerFunc {
 		}
 		var batchAns BatchAnswer
 		for i := 0; i < len(shortURLs); i++ {
-			batchAns = append(batchAns, BatchAnswerElem{batchResp[i].CorrelationId, shortURLs[i]})
+			batchAns = append(batchAns, BatchAnswerElem{batchResp[i].CorrelationID, shortURLs[i]})
 		}
 		resp, err := json.Marshal(batchAns)
 		if err != nil {
