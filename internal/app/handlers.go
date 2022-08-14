@@ -29,6 +29,7 @@ func NewShortenerHandler(sa *ShortenerApp) *shortenerHandler {
 	}
 	h.Post("/", h.middlewareUnpacker(h.postURLCommon()))
 	h.Post("/api/shorten", h.middlewareUnpacker(h.postURLByJSON()))
+	h.Post("/api/shorten/batch", h.middlewareUnpacker(h.postURLBatch()))
 	h.Mux.NotFound(h.badRequest())
 	h.Mux.MethodNotAllowed(h.badRequest())
 	h.Get("/{shortURL}", h.middlewareUnpacker(h.getURL()))
@@ -51,6 +52,20 @@ func (w gzipWriter) Write(b []byte) (int, error) {
 type CookieData struct {
 	UserID int
 	Token  []byte
+}
+
+type BatchResponse []BatchResponseElem
+
+type BatchAnswer []BatchAnswerElem
+
+type BatchResponseElem struct {
+	CorrelationId string `json:"correlation_id"`
+	OriginalUrl   string `json:"original_url"`
+}
+
+type BatchAnswerElem struct {
+	CorrelationId string `json:"correlation_id"`
+	ShortUrl      string `json:"short_url"`
 }
 
 func (h *shortenerHandler) middlewareUnpacker(next http.HandlerFunc) http.HandlerFunc {
@@ -238,6 +253,110 @@ func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 			Result string `json:"result"`
 		}{Result: shortURL}
 		resp, err := json.Marshal(resultRespBody)
+		if err != nil {
+			http.Error(w, "Cannot marshal JSON response", http.StatusInternalServerError)
+			return
+		}
+
+		http.SetCookie(w, userCookie)
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(201)
+		_, errWrite := w.Write(resp)
+		if errWrite != nil {
+			log.Printf("Writting error")
+			return
+		}
+	}
+}
+
+func (h *shortenerHandler) postURLBatch() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := int(rand.Int31())
+
+		// Process cookies
+		cookieName := "token"
+		userCookie, err := r.Cookie(cookieName)
+		if err != nil {
+			if !errors.Is(err, http.ErrNoCookie) {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			userCookie, err = h.createCookie(cookieName, userID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			// Checking sign of cookie
+			curCookieValue := CookieData{}
+			cookieValueUnescaped, err := url.QueryUnescape(userCookie.Value)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			err = json.Unmarshal([]byte(cookieValueUnescaped), &curCookieValue)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			expectedToken := GetUserToken(curCookieValue.UserID)
+			signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
+			if hmac.Equal(curCookieValue.Token, signedExpectedToken) {
+				userID = curCookieValue.UserID
+			} else {
+				userCookie, err = h.createCookie(cookieName, userID)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+			}
+		}
+		var reader io.Reader
+		if r.Header.Get(`Content-Encoding`) == `gzip` {
+			gz, err := gzip.NewReader(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			reader = gz
+
+			defer gz.Close()
+		} else {
+			reader = r.Body
+		}
+		body, err := io.ReadAll(reader)
+		defer r.Body.Close()
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		ct := r.Header.Get("content-type")
+		if ct != "application/json" {
+			http.Error(w, "Invalid content type of request", http.StatusBadRequest)
+			return
+		}
+
+		var batchResp BatchResponse
+		if err := json.Unmarshal(body, &batchResp); err != nil {
+			http.Error(w, "Cannot unmarshal JSON request", http.StatusBadRequest)
+			return
+		}
+		var urlsForShortener []string
+		for _, respElem := range batchResp {
+			urlsForShortener = append(urlsForShortener, respElem.OriginalUrl)
+		}
+		shortURLs, errCreating := h.app.createShortURLs(urlsForShortener, userID)
+		if errCreating != nil {
+			http.Error(w, errCreating.Error(), http.StatusBadRequest)
+			return
+		}
+		var batchAns BatchAnswer
+		for i := 0; i < len(shortURLs); i++ {
+			batchAns = append(batchAns, BatchAnswerElem{batchResp[i].CorrelationId, shortURLs[i]})
+		}
+		resp, err := json.Marshal(batchAns)
 		if err != nil {
 			http.Error(w, "Cannot marshal JSON response", http.StatusInternalServerError)
 			return

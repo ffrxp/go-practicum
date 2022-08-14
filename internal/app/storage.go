@@ -11,10 +11,12 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 )
 
 type Repository interface {
 	addItem(id string, value string, userID int) error
+	addBatchItems(ids []string, values []string, userID int) error
 	getItem(value string) (string, error)
 	getUserHistory(userID int) (History, error)
 	Close() error
@@ -73,6 +75,19 @@ func (ms *dataStorage) addItem(id string, value string, userID int) error {
 		}
 	}
 	ms.addItemUserHistory(id, value, userID)
+	return nil
+}
+
+func (ms *dataStorage) addBatchItems(ids []string, values []string, userID int) error {
+	if len(ids) != len(values) {
+		return errors.New("number of id and values is not equal")
+	}
+	for i := 0; i < len(ids); i++ {
+		err := ms.addItem(ids[i], values[i], userID)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -135,10 +150,6 @@ type databaseStorage struct {
 	pool *pgxpool.Pool
 }
 
-type testStruct struct {
-	pool *pgxpool.Pool
-}
-
 func NewDatabaseStorage(source string) (*databaseStorage, error) {
 	dbpool, err := pgxpool.Connect(context.Background(), source)
 	if err != nil {
@@ -170,6 +181,24 @@ func (dbs *databaseStorage) addItem(id string, value string, userID int) error {
 	if err := dbs.addItemUserHistory(id, value, userID); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (dbs *databaseStorage) addBatchItems(ids []string, values []string, userID int) error {
+	// В документации pgx рекомендовано задавать в контексте ограничение по времени,
+	// т.к. при большом количестве запросов в batch возможен deadlock
+	batch := &pgx.Batch{}
+	for i := 0; i < len(ids); i++ {
+		batch.Queue("INSERT INTO convertions (short_url, orig_url) VALUES ($1, $2)", values[i], ids[i])
+	}
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancelFunc()
+
+	batchRes := dbs.pool.SendBatch(ctx, batch)
+	defer batchRes.Close()
+
+	// Не совсем понял, нужно ли дополнять историю юзера в этом случае. Пока не делаю, т.к. некоторые вещи в этом не очевидны
+
 	return nil
 }
 

@@ -24,6 +24,23 @@ func (sa *ShortenerApp) createShortURL(url string, userID int) (string, error) {
 	return outputFullShortURL, nil
 }
 
+// Create short URLs for batch of URLs. Short URLs will return in same sequence
+func (sa *ShortenerApp) createShortURLs(urls []string, userID int) ([]string, error) {
+	var shortURLs []string
+	for _, URL := range urls {
+		shortURLs = append(shortURLs, sa.makeShortURL(URL))
+	}
+	err := sa.Storage.addBatchItems(urls, shortURLs, userID)
+	if err != nil {
+		return make([]string, 0), err
+	}
+	var fullShortURLs []string
+	for _, shortURL := range shortURLs {
+		fullShortURLs = append(fullShortURLs, fmt.Sprintf("%s/%s", sa.BaseAddress, shortURL))
+	}
+	return fullShortURLs, nil
+}
+
 func (sa *ShortenerApp) getOrigURL(shortURL string) (string, error) {
 	origURL, err := sa.Storage.getItem(shortURL)
 	if err != nil {

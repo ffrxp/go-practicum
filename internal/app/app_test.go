@@ -131,6 +131,19 @@ func TestRouter(t *testing.T) {
 				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", *baseAddress),
 			},
 		},
+		{
+			name:        "POST test #4 (batch)",
+			method:      "POST",
+			target:      "/api/shorten/batch",
+			content:     "[{\"correlation_id\":\"url1\",\"original_url\":\"stackoverflow.com\"},{\"correlation_id\":\"url2\",\"original_url\":\"go.dev\"}]",
+			contentType: "application/json",
+			want: Want{
+				code:        201,
+				location:    "",
+				contentType: "application/json",
+				response:    fmt.Sprintf("[{\"correlation_id\":\"url1\",\"short_url\":\"%s/2177322106\"},{\"correlation_id\":\"url2\",\"short_url\":\"%s/294555335\"}]", *baseAddress, *baseAddress),
+			},
+		},
 	}
 
 	storage := NewDataStorage(*storagePath)
