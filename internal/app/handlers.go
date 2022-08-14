@@ -60,12 +60,12 @@ type BatchAnswer []BatchAnswerElem
 
 type BatchResponseElem struct {
 	CorrelationId string `json:"correlation_id"`
-	OriginalUrl   string `json:"original_url"`
+	OriginalURL   string `json:"original_url"`
 }
 
 type BatchAnswerElem struct {
 	CorrelationId string `json:"correlation_id"`
-	ShortUrl      string `json:"short_url"`
+	ShortURL      string `json:"short_url"`
 }
 
 func (h *shortenerHandler) middlewareUnpacker(next http.HandlerFunc) http.HandlerFunc {
@@ -345,7 +345,7 @@ func (h *shortenerHandler) postURLBatch() http.HandlerFunc {
 		}
 		var urlsForShortener []string
 		for _, respElem := range batchResp {
-			urlsForShortener = append(urlsForShortener, respElem.OriginalUrl)
+			urlsForShortener = append(urlsForShortener, respElem.OriginalURL)
 		}
 		shortURLs, errCreating := h.app.createShortURLs(urlsForShortener, userID)
 		if errCreating != nil {
