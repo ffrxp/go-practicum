@@ -160,7 +160,7 @@ func (h *shortenerHandler) postURLCommon() http.HandlerFunc {
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
-				resultStatus = 209
+				resultStatus = 409
 			} else {
 				http.Error(w, errCreating.Error(), http.StatusBadRequest)
 				return
@@ -262,7 +262,7 @@ func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
-				resultStatus = 209
+				resultStatus = 409
 			} else {
 				http.Error(w, errCreating.Error(), http.StatusBadRequest)
 				return

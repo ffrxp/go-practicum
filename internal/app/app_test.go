@@ -151,10 +151,23 @@ func TestRouter(t *testing.T) {
 			content:     "yandex.com",
 			contentType: "",
 			want: Want{
-				code:        209,
+				code:        409,
 				location:    "",
 				contentType: "",
 				response:    fmt.Sprintf("%s/1389853602", *baseAddress),
+			},
+		},
+		{
+			name:        "POST test #6 (request JSON with existing data)",
+			method:      "POST",
+			target:      "/api/shorten",
+			content:     "{\"url\":\"ya.ru\"}",
+			contentType: "application/json",
+			want: Want{
+				code:        409,
+				location:    "",
+				contentType: "application/json",
+				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", *baseAddress),
 			},
 		},
 	}
