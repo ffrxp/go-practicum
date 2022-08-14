@@ -151,15 +151,24 @@ func (h *shortenerHandler) postURLCommon() http.HandlerFunc {
 			return
 		}
 
-		shortURL, errCreating := h.app.createShortURL(string(body), userID)
+		resultStatus := 201
+		resultURL, errCreating := h.app.createShortURL(string(body), userID)
 		if errCreating != nil {
-			http.Error(w, errCreating.Error(), http.StatusBadRequest)
-			return
+			if errCreating.Error() == "already exists" {
+				resultURL, err = h.app.getExistShortURL(string(body))
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				resultStatus = 209
+			} else {
+				http.Error(w, errCreating.Error(), http.StatusBadRequest)
+				return
+			}
 		}
-
 		http.SetCookie(w, userCookie)
-		w.WriteHeader(201)
-		_, errWrite := w.Write([]byte(shortURL))
+		w.WriteHeader(resultStatus)
+		_, errWrite := w.Write([]byte(resultURL))
 		if errWrite != nil {
 			log.Printf("Writting error")
 			return
@@ -243,15 +252,26 @@ func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 			http.Error(w, "Cannot unmarshal JSON request", http.StatusBadRequest)
 			return
 		}
-		shortURL, errCreating := h.app.createShortURL(requestParsedBody.URL, userID)
+
+		resultStatus := 201
+		resultURL, errCreating := h.app.createShortURL(requestParsedBody.URL, userID)
 		if errCreating != nil {
-			http.Error(w, errCreating.Error(), http.StatusBadRequest)
-			return
+			if errCreating.Error() == "already exists" {
+				resultURL, err = h.app.getExistShortURL(requestParsedBody.URL)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				resultStatus = 209
+			} else {
+				http.Error(w, errCreating.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 
 		resultRespBody := struct {
 			Result string `json:"result"`
-		}{Result: shortURL}
+		}{Result: resultURL}
 		resp, err := json.Marshal(resultRespBody)
 		if err != nil {
 			http.Error(w, "Cannot marshal JSON response", http.StatusInternalServerError)
@@ -260,7 +280,7 @@ func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 
 		http.SetCookie(w, userCookie)
 		w.Header().Set("content-type", "application/json")
-		w.WriteHeader(201)
+		w.WriteHeader(resultStatus)
 		_, errWrite := w.Write(resp)
 		if errWrite != nil {
 			log.Printf("Writting error")

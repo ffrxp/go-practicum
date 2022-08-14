@@ -144,11 +144,25 @@ func TestRouter(t *testing.T) {
 				response:    fmt.Sprintf("[{\"correlation_id\":\"url1\",\"short_url\":\"%s/2177322106\"},{\"correlation_id\":\"url2\",\"short_url\":\"%s/294555335\"}]", *baseAddress, *baseAddress),
 			},
 		},
+		{
+			name:        "POST test #5 (request with existing data)",
+			method:      "POST",
+			target:      "/",
+			content:     "yandex.com",
+			contentType: "",
+			want: Want{
+				code:        209,
+				location:    "",
+				contentType: "",
+				response:    fmt.Sprintf("%s/1389853602", *baseAddress),
+			},
+		},
 	}
 
 	storage := NewDataStorage(*storagePath)
 	defer storage.Close()
 	sa := ShortenerApp{Storage: storage, BaseAddress: *baseAddress}
+
 	h := NewShortenerHandler(&sa)
 	ts := httptest.NewServer(h)
 	defer ts.Close()

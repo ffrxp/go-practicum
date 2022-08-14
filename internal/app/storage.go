@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgconn"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"log"
@@ -18,6 +20,7 @@ type Repository interface {
 	addItem(id string, value string, userID int) error
 	addBatchItems(ids []string, values []string, userID int) error
 	getItem(value string) (string, error)
+	getItemByID(ID string) (string, error)
 	getUserHistory(userID int) (History, error)
 	Close() error
 }
@@ -62,6 +65,9 @@ func NewDataStorage(source string) *dataStorage {
 }
 
 func (ms *dataStorage) addItem(id string, value string, userID int) error {
+	if _, ok := ms.storage[id]; ok {
+		return errors.New("already exists")
+	}
 	ms.storage[id] = value
 	if ms.sfm != nil {
 		if err := ms.sfm.file.Truncate(0); err != nil {
@@ -95,6 +101,15 @@ func (ms *dataStorage) getItem(value string) (string, error) {
 	for key, val := range ms.storage {
 		if val == value {
 			return key, nil
+		}
+	}
+	return "", errors.New("not found")
+}
+
+func (ms *dataStorage) getItemByID(ID string) (string, error) {
+	for key, val := range ms.storage {
+		if key == ID {
+			return val, nil
 		}
 	}
 	return "", errors.New("not found")
@@ -156,11 +171,13 @@ func NewDatabaseStorage(source string) (*databaseStorage, error) {
 		log.Printf("Cannot connect to database")
 		return nil, err
 	}
-	queryCreateConv := "CREATE TABLE IF NOT EXISTS convertions (short_url character varying(2048) NOT NULL, orig_url character varying(2048) NOT NULL)"
+	queryCreateConv := "CREATE TABLE IF NOT EXISTS convertions " +
+		"(short_url character varying(2048) NOT NULL PRIMARY KEY, orig_url character varying(2048) NOT NULL)"
 	if _, err := dbpool.Exec(context.Background(), queryCreateConv); err != nil {
 		return nil, err
 	}
-	queryCreateHistories := "CREATE TABLE IF NOT EXISTS histories (user_id integer NOT NULL, history text NOT NULL)"
+	queryCreateHistories := "CREATE TABLE IF NOT EXISTS histories " +
+		"(user_id integer NOT NULL PRIMARY KEY, history text NOT NULL)"
 	if _, err := dbpool.Exec(context.Background(), queryCreateHistories); err != nil {
 		return nil, err
 	}
@@ -176,6 +193,13 @@ func (dbs *databaseStorage) Close() error {
 func (dbs *databaseStorage) addItem(id string, value string, userID int) error {
 	if _, err := dbs.pool.Exec(context.Background(),
 		"INSERT INTO convertions (short_url, orig_url) VALUES ($1, $2)", value, id); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == pgerrcode.UniqueViolation {
+				return errors.New("already exists")
+			}
+			return err
+		}
 		return err
 	}
 	if err := dbs.addItemUserHistory(id, value, userID); err != nil {
@@ -235,8 +259,20 @@ func (dbs *databaseStorage) addItemUserHistory(id string, value string, userID i
 }
 
 func (dbs *databaseStorage) getItem(value string) (string, error) {
+	var origURL string
+	err := dbs.pool.QueryRow(context.Background(), "SELECT orig_url FROM convertions WHERE short_url = $1", value).Scan(&origURL)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", errors.New("not found")
+		}
+		return "", err
+	}
+	return origURL, nil
+}
+
+func (dbs *databaseStorage) getItemByID(ID string) (string, error) {
 	var shortURL string
-	err := dbs.pool.QueryRow(context.Background(), "SELECT orig_url FROM convertions WHERE short_url = $1", value).Scan(&shortURL)
+	err := dbs.pool.QueryRow(context.Background(), "SELECT short_url FROM convertions WHERE orig_url = $1", ID).Scan(&shortURL)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", errors.New("not found")

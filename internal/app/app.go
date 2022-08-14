@@ -52,6 +52,18 @@ func (sa *ShortenerApp) getOrigURL(shortURL string) (string, error) {
 	return origURL, nil
 }
 
+func (sa *ShortenerApp) getExistShortURL(origURL string) (string, error) {
+	shortURL, err := sa.Storage.getItemByID(origURL)
+	if err != nil {
+		if err.Error() == "not found" {
+			return "", errors.New("cannot find short URL for this full URL")
+		}
+		return "", err
+	}
+	outputFullShortURL := fmt.Sprintf("%s/%s", sa.BaseAddress, shortURL)
+	return outputFullShortURL, nil
+}
+
 func (sa *ShortenerApp) getHistoryURLsForUser(userID int) ([]byte, error) {
 	history, err := sa.Storage.getUserHistory(userID)
 	if err != nil {
