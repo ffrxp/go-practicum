@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,9 +34,7 @@ func testRequest(t *testing.T, ts *httptest.Server, method, contentType, path st
 }
 
 func TestRouter(t *testing.T) {
-	baseAddress := flag.String("b", GetBaseAddress(), "Base address for short URLs")
-	storagePath := flag.String("f", GetStoragePath(), "Path for storage of short URLs")
-	flag.Parse()
+	config := InitConfig()
 
 	type Want struct {
 		code        int
@@ -76,7 +73,7 @@ func TestRouter(t *testing.T) {
 				code:        201,
 				location:    "",
 				contentType: "",
-				response:    fmt.Sprintf("%s/1389853602", *baseAddress),
+				response:    fmt.Sprintf("%s/1389853602", config.BaseAddress),
 			},
 		},
 		{
@@ -128,7 +125,7 @@ func TestRouter(t *testing.T) {
 				code:        201,
 				location:    "",
 				contentType: "application/json",
-				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", *baseAddress),
+				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", config.BaseAddress),
 			},
 		},
 		{
@@ -141,7 +138,7 @@ func TestRouter(t *testing.T) {
 				code:        201,
 				location:    "",
 				contentType: "application/json",
-				response:    fmt.Sprintf("[{\"correlation_id\":\"url1\",\"short_url\":\"%s/2177322106\"},{\"correlation_id\":\"url2\",\"short_url\":\"%s/294555335\"}]", *baseAddress, *baseAddress),
+				response:    fmt.Sprintf("[{\"correlation_id\":\"url1\",\"short_url\":\"%s/2177322106\"},{\"correlation_id\":\"url2\",\"short_url\":\"%s/294555335\"}]", config.BaseAddress, config.BaseAddress),
 			},
 		},
 		{
@@ -154,7 +151,7 @@ func TestRouter(t *testing.T) {
 				code:        409,
 				location:    "",
 				contentType: "",
-				response:    fmt.Sprintf("%s/1389853602", *baseAddress),
+				response:    fmt.Sprintf("%s/1389853602", config.BaseAddress),
 			},
 		},
 		{
@@ -167,14 +164,14 @@ func TestRouter(t *testing.T) {
 				code:        409,
 				location:    "",
 				contentType: "application/json",
-				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", *baseAddress),
+				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", config.BaseAddress),
 			},
 		},
 	}
 
-	storage := NewDataStorage(*storagePath)
+	storage := NewDataStorage(config.StoragePath)
 	defer storage.Close()
-	sa := ShortenerApp{Storage: storage, BaseAddress: *baseAddress}
+	sa := ShortenerApp{Storage: storage, BaseAddress: config.BaseAddress}
 
 	h := NewShortenerHandler(&sa)
 	ts := httptest.NewServer(h)

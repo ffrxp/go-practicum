@@ -1,40 +1,34 @@
 package main
 
 import (
-	"flag"
 	"github.com/ffrxp/go-practicum/internal/app"
 	"log"
 	"net/http"
 )
 
 func main() {
-	serverAddress := flag.String("a", app.GetServerAddress(), "Start server address.")
-	baseAddress := flag.String("b", app.GetBaseAddress(), "Base address for short URLs")
-	storagePath := flag.String("f", app.GetStoragePath(), "Path for storage of short URLs")
-	databasePath := flag.String("d", app.GetDatabasePath(), "Path for connect to database")
-	flag.Parse()
-
-	if *databasePath != "" {
-		storage, err := app.NewDatabaseStorage(*databasePath)
+	config := app.InitConfig()
+	if config.DatabasePath != "" {
+		storage, err := app.NewDatabaseStorage(config.DatabasePath)
 		if err == nil {
 			defer storage.Close()
 			sa := app.ShortenerApp{Storage: storage,
-				BaseAddress:  *baseAddress,
-				DatabasePath: *databasePath}
-			log.Fatal(http.ListenAndServe(*serverAddress, app.NewShortenerHandler(&sa)))
+				BaseAddress:  config.BaseAddress,
+				DatabasePath: config.DatabasePath}
+			log.Fatal(http.ListenAndServe(config.ServerAddress, app.NewShortenerHandler(&sa)))
 		}
 		log.Printf("Can't connect to database or init tables. Error:%s", err.Error())
-		dataStorage := app.NewDataStorage(*storagePath)
+		dataStorage := app.NewDataStorage(config.StoragePath)
 		defer dataStorage.Close()
 		sa := app.ShortenerApp{Storage: dataStorage,
-			BaseAddress:  *baseAddress,
-			DatabasePath: *databasePath}
-		log.Fatal(http.ListenAndServe(*serverAddress, app.NewShortenerHandler(&sa)))
+			BaseAddress:  config.BaseAddress,
+			DatabasePath: config.DatabasePath}
+		log.Fatal(http.ListenAndServe(config.ServerAddress, app.NewShortenerHandler(&sa)))
 	}
-	dataStorage := app.NewDataStorage(*storagePath)
+	dataStorage := app.NewDataStorage(config.StoragePath)
 	defer dataStorage.Close()
 	sa := app.ShortenerApp{Storage: dataStorage,
-		BaseAddress:  *baseAddress,
-		DatabasePath: *databasePath}
-	log.Fatal(http.ListenAndServe(*serverAddress, app.NewShortenerHandler(&sa)))
+		BaseAddress:  config.BaseAddress,
+		DatabasePath: config.DatabasePath}
+	log.Fatal(http.ListenAndServe(config.ServerAddress, app.NewShortenerHandler(&sa)))
 }
