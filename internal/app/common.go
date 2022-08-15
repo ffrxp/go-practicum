@@ -1,30 +1,62 @@
 package app
 
-import "os"
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"flag"
+	"fmt"
+	"os"
+	"strconv"
+)
 
-const DefaultServerAddress = ":8080"
-const DefaultBaseAddress = "http://localhost:8080"
+const defaultServerAddress = ":8080"
+const defaultBaseAddress = "http://localhost:8080"
 
-func GetServerAddress() string {
-	val, ok := os.LookupEnv("SERVER_ADDRESS")
-	if !ok || val == "" {
-		return DefaultServerAddress
-	}
-	return val
+type Config struct {
+	ServerAddress string
+	BaseAddress   string
+	StoragePath   string
+	DatabasePath  string
 }
 
-func GetBaseAddress() string {
-	val, ok := os.LookupEnv("BASE_URL")
-	if !ok || val == "" {
-		return DefaultBaseAddress
-	}
-	return val
-}
+func InitConfig() *Config {
+	var conf Config
 
-func GetStoragePath() string {
-	path, ok := os.LookupEnv("FILE_STORAGE_PATH")
+	defServerAddress, ok := os.LookupEnv("SERVER_ADDRESS")
+	if !ok || defServerAddress == "" {
+		defServerAddress = defaultServerAddress
+	}
+	defBaseAddress, ok := os.LookupEnv("BASE_URL")
+	if !ok || defBaseAddress == "" {
+		defBaseAddress = defaultBaseAddress
+	}
+	defStoragePath, ok := os.LookupEnv("FILE_STORAGE_PATH")
 	if !ok {
-		return ""
+		defStoragePath = ""
 	}
-	return path
+	defDatabasePath, ok := os.LookupEnv("DATABASE_DSN")
+	if !ok {
+		defDatabasePath = ""
+	}
+
+	flag.StringVar(&(conf.ServerAddress), "a", defServerAddress, "Start server address.")
+	flag.StringVar(&(conf.BaseAddress), "b", defBaseAddress, "Base address for short URLs")
+	flag.StringVar(&(conf.StoragePath), "f", defStoragePath, "Path for storage of short URLs")
+	flag.StringVar(&(conf.DatabasePath), "d", defDatabasePath, "Path for connect to database")
+	flag.Parse()
+
+	return &conf
+}
+
+func SignMsg(msg []byte, key []byte) []byte {
+	h := hmac.New(sha256.New, key)
+	h.Write(msg)
+	dst := h.Sum(nil)
+	return dst
+}
+
+func GetUserToken(UID int) string {
+	// Make token. It is learning realization, so token will be not enough secured for real implementation
+	strUID := strconv.Itoa(UID)
+	return fmt.Sprintf("token%s", strUID)
 }

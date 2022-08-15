@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,15 +27,14 @@ func testRequest(t *testing.T, ts *httptest.Server, method, contentType, path st
 	require.NoError(t, errDoReq)
 
 	respBody, errRead := ioutil.ReadAll(resp.Body)
+
 	require.NoError(t, errRead)
 
 	return resp, string(respBody)
 }
 
 func TestRouter(t *testing.T) {
-	baseAddress := flag.String("b", GetBaseAddress(), "Base address for short URLs")
-	storagePath := flag.String("f", GetStoragePath(), "Path for storage of short URLs")
-	flag.Parse()
+	config := InitConfig()
 
 	type Want struct {
 		code        int
@@ -53,6 +51,19 @@ func TestRouter(t *testing.T) {
 		want        Want
 	}{
 		{
+			name:        "GET test #1",
+			method:      "GET",
+			target:      "/api/user/urls",
+			content:     "",
+			contentType: "",
+			want: Want{
+				code:        204,
+				location:    "",
+				contentType: "",
+				response:    "",
+			},
+		},
+		{
 			name:        "POST test #1",
 			method:      "POST",
 			target:      "/",
@@ -62,7 +73,7 @@ func TestRouter(t *testing.T) {
 				code:        201,
 				location:    "",
 				contentType: "",
-				response:    fmt.Sprintf("%s/1389853602", *baseAddress),
+				response:    fmt.Sprintf("%s/1389853602", config.BaseAddress),
 			},
 		},
 		{
@@ -79,7 +90,7 @@ func TestRouter(t *testing.T) {
 			},
 		},
 		{
-			name:        "GET test #1",
+			name:        "GET test #2",
 			method:      "GET",
 			target:      "/1389853602",
 			content:     "",
@@ -92,7 +103,7 @@ func TestRouter(t *testing.T) {
 			},
 		},
 		{
-			name:        "GET test #2",
+			name:        "GET test #3",
 			method:      "GET",
 			target:      "//%dfghdfkjghs/asadad",
 			content:     "",
@@ -114,14 +125,54 @@ func TestRouter(t *testing.T) {
 				code:        201,
 				location:    "",
 				contentType: "application/json",
-				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", *baseAddress),
+				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", config.BaseAddress),
+			},
+		},
+		{
+			name:        "POST test #4 (batch)",
+			method:      "POST",
+			target:      "/api/shorten/batch",
+			content:     "[{\"correlation_id\":\"url1\",\"original_url\":\"stackoverflow.com\"},{\"correlation_id\":\"url2\",\"original_url\":\"go.dev\"}]",
+			contentType: "application/json",
+			want: Want{
+				code:        201,
+				location:    "",
+				contentType: "application/json",
+				response:    fmt.Sprintf("[{\"correlation_id\":\"url1\",\"short_url\":\"%s/2177322106\"},{\"correlation_id\":\"url2\",\"short_url\":\"%s/294555335\"}]", config.BaseAddress, config.BaseAddress),
+			},
+		},
+		{
+			name:        "POST test #5 (request with existing data)",
+			method:      "POST",
+			target:      "/",
+			content:     "yandex.com",
+			contentType: "",
+			want: Want{
+				code:        409,
+				location:    "",
+				contentType: "",
+				response:    fmt.Sprintf("%s/1389853602", config.BaseAddress),
+			},
+		},
+		{
+			name:        "POST test #6 (request JSON with existing data)",
+			method:      "POST",
+			target:      "/api/shorten",
+			content:     "{\"url\":\"ya.ru\"}",
+			contentType: "application/json",
+			want: Want{
+				code:        409,
+				location:    "",
+				contentType: "application/json",
+				response:    fmt.Sprintf("{\"result\":\"%s/3201241320\"}", config.BaseAddress),
 			},
 		},
 	}
 
-	storage := NewDataStorage(*storagePath)
+	storage := NewDataStorage(config.StoragePath)
 	defer storage.Close()
-	sa := ShortenerApp{Storage: storage, BaseAddress: *baseAddress}
+	sa := ShortenerApp{Storage: storage, BaseAddress: config.BaseAddress}
+
 	h := NewShortenerHandler(&sa)
 	ts := httptest.NewServer(h)
 	defer ts.Close()
