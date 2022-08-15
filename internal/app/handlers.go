@@ -22,8 +22,8 @@ type shortenerHandler struct {
 	secKey []byte
 }
 
-func NewShortenerHandler(sa *ShortenerApp) *shortenerHandler {
-	h := &shortenerHandler{
+func NewShortenerHandler(sa *ShortenerApp) shortenerHandler {
+	h := shortenerHandler{
 		Mux: chi.NewMux(),
 		app: sa,
 	}
@@ -52,6 +52,11 @@ func (w gzipWriter) Write(b []byte) (int, error) {
 type CookieData struct {
 	UserID int
 	Token  []byte
+}
+
+type processCookieResult struct {
+	userID int
+	cookie *http.Cookie
 }
 
 type BatchResponse []BatchResponseElem
@@ -89,45 +94,10 @@ func (h *shortenerHandler) middlewareUnpacker(next http.HandlerFunc) http.Handle
 
 func (h *shortenerHandler) postURLCommon() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := int(rand.Int31())
-
-		// Process cookies
-		cookieName := "token"
-		userCookie, err := r.Cookie(cookieName)
+		pcr, err := h.processCookies(r)
 		if err != nil {
-			if !errors.Is(err, http.ErrNoCookie) {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			userCookie, err = h.createCookie(cookieName, userID)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			// Checking sign of cookie
-			curCookieValue := CookieData{}
-			cookieValueUnescaped, err := url.QueryUnescape(userCookie.Value)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			err = json.Unmarshal([]byte(cookieValueUnescaped), &curCookieValue)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			expectedToken := GetUserToken(curCookieValue.UserID)
-			signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
-			if hmac.Equal(curCookieValue.Token, signedExpectedToken) {
-				userID = curCookieValue.UserID
-			} else {
-				userCookie, err = h.createCookie(cookieName, userID)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		var reader io.Reader
@@ -152,7 +122,7 @@ func (h *shortenerHandler) postURLCommon() http.HandlerFunc {
 		}
 
 		resultStatus := 201
-		resultURL, errCreating := h.app.createShortURL(string(body), userID)
+		resultURL, errCreating := h.app.createShortURL(string(body), pcr.userID)
 		if errCreating != nil {
 			if errCreating.Error() == "already exists" {
 				resultURL, err = h.app.getExistShortURL(string(body))
@@ -166,7 +136,7 @@ func (h *shortenerHandler) postURLCommon() http.HandlerFunc {
 				return
 			}
 		}
-		http.SetCookie(w, userCookie)
+		http.SetCookie(w, pcr.cookie)
 		w.WriteHeader(resultStatus)
 		_, errWrite := w.Write([]byte(resultURL))
 		if errWrite != nil {
@@ -178,46 +148,10 @@ func (h *shortenerHandler) postURLCommon() http.HandlerFunc {
 
 func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := int(rand.Int31())
-
-		// Process cookies
-		cookieName := "token"
-		userCookie, err := r.Cookie(cookieName)
+		pcr, err := h.processCookies(r)
 		if err != nil {
-			if !errors.Is(err, http.ErrNoCookie) {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			userCookie, err = h.createCookie(cookieName, userID)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			// Checking sign of cookie
-			curCookieValue := CookieData{}
-			cookieValueUnescaped, err := url.QueryUnescape(userCookie.Value)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			err = json.Unmarshal([]byte(cookieValueUnescaped), &curCookieValue)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			expectedToken := GetUserToken(curCookieValue.UserID)
-			signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
-			if hmac.Equal(curCookieValue.Token, signedExpectedToken) {
-				userID = curCookieValue.UserID
-			} else {
-				userCookie, err = h.createCookie(cookieName, userID)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		var reader io.Reader
@@ -254,7 +188,7 @@ func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 		}
 
 		resultStatus := 201
-		resultURL, errCreating := h.app.createShortURL(requestParsedBody.URL, userID)
+		resultURL, errCreating := h.app.createShortURL(requestParsedBody.URL, pcr.userID)
 		if errCreating != nil {
 			if errCreating.Error() == "already exists" {
 				resultURL, err = h.app.getExistShortURL(requestParsedBody.URL)
@@ -278,7 +212,7 @@ func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 			return
 		}
 
-		http.SetCookie(w, userCookie)
+		http.SetCookie(w, pcr.cookie)
 		w.Header().Set("content-type", "application/json")
 		w.WriteHeader(resultStatus)
 		_, errWrite := w.Write(resp)
@@ -291,47 +225,12 @@ func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 
 func (h *shortenerHandler) postURLBatch() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := int(rand.Int31())
-
-		// Process cookies
-		cookieName := "token"
-		userCookie, err := r.Cookie(cookieName)
+		pcr, err := h.processCookies(r)
 		if err != nil {
-			if !errors.Is(err, http.ErrNoCookie) {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			userCookie, err = h.createCookie(cookieName, userID)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			// Checking sign of cookie
-			curCookieValue := CookieData{}
-			cookieValueUnescaped, err := url.QueryUnescape(userCookie.Value)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			err = json.Unmarshal([]byte(cookieValueUnescaped), &curCookieValue)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			expectedToken := GetUserToken(curCookieValue.UserID)
-			signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
-			if hmac.Equal(curCookieValue.Token, signedExpectedToken) {
-				userID = curCookieValue.UserID
-			} else {
-				userCookie, err = h.createCookie(cookieName, userID)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
+
 		var reader io.Reader
 		if r.Header.Get(`Content-Encoding`) == `gzip` {
 			gz, err := gzip.NewReader(r.Body)
@@ -367,7 +266,7 @@ func (h *shortenerHandler) postURLBatch() http.HandlerFunc {
 		for _, respElem := range batchResp {
 			urlsForShortener = append(urlsForShortener, respElem.OriginalURL)
 		}
-		shortURLs, errCreating := h.app.createShortURLs(urlsForShortener, userID)
+		shortURLs, errCreating := h.app.createShortURLs(urlsForShortener, pcr.userID)
 		if errCreating != nil {
 			http.Error(w, errCreating.Error(), http.StatusBadRequest)
 			return
@@ -382,7 +281,7 @@ func (h *shortenerHandler) postURLBatch() http.HandlerFunc {
 			return
 		}
 
-		http.SetCookie(w, userCookie)
+		http.SetCookie(w, pcr.cookie)
 		w.Header().Set("content-type", "application/json")
 		w.WriteHeader(201)
 		_, errWrite := w.Write(resp)
@@ -395,45 +294,7 @@ func (h *shortenerHandler) postURLBatch() http.HandlerFunc {
 
 func (h *shortenerHandler) getURL() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := int(rand.Int31())
-
-		// Process cookies
-		cookieName := "token"
-		userCookie, err := r.Cookie(cookieName)
-		if err != nil {
-			if !errors.Is(err, http.ErrNoCookie) {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			userCookie, err = h.createCookie(cookieName, userID)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			// Checking sign of cookie
-			curCookieValue := CookieData{}
-			cookieValueUnescaped, err := url.QueryUnescape(userCookie.Value)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			err = json.Unmarshal([]byte(cookieValueUnescaped), &curCookieValue)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			expectedToken := GetUserToken(curCookieValue.UserID)
-			signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
-			if !hmac.Equal(curCookieValue.Token, signedExpectedToken) {
-				userCookie, err = h.createCookie(cookieName, userID)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-			}
-		}
+		// Нужно ли в этом обработчике создавать куки? На функционал они не повлияют, но юзера можно зафиксировать уже здесь
 
 		paramURL := chi.URLParam(r, "shortURL")
 		if strings.Contains(paramURL, "/") {
@@ -444,7 +305,6 @@ func (h *shortenerHandler) getURL() http.HandlerFunc {
 			http.Error(w, "Cannot find full URL for this short URL", http.StatusBadRequest)
 			return
 		}
-		http.SetCookie(w, userCookie)
 		w.Header().Set("Location", origURL)
 		w.WriteHeader(307)
 	}
@@ -452,64 +312,29 @@ func (h *shortenerHandler) getURL() http.HandlerFunc {
 
 func (h *shortenerHandler) returnUserURLs() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := int(rand.Int31())
-
-		// Process cookies
-		cookieName := "token"
-		userCookie, err := r.Cookie(cookieName)
+		pcr, err := h.processCookies(r)
 		if err != nil {
-			if !errors.Is(err, http.ErrNoCookie) {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			userCookie, err = h.createCookie(cookieName, userID)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			// Checking sign of cookie
-			curCookieValue := CookieData{}
-			cookieValueUnescaped, err := url.QueryUnescape(userCookie.Value)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			err = json.Unmarshal([]byte(cookieValueUnescaped), &curCookieValue)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			expectedToken := GetUserToken(curCookieValue.UserID)
-			signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
-
-			if hmac.Equal(curCookieValue.Token, signedExpectedToken) {
-				userID = curCookieValue.UserID
-			} else {
-				userCookie, err = h.createCookie(cookieName, userID)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-		userHaveHistoryURLs, err := h.app.userHaveHistoryURLs(userID)
+
+		userHaveHistoryURLs, err := h.app.userHaveHistoryURLs(pcr.userID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if !userHaveHistoryURLs {
-			http.SetCookie(w, userCookie)
+			http.SetCookie(w, pcr.cookie)
 			w.WriteHeader(204)
 			return
 		}
-		history, err := h.app.getHistoryURLsForUser(userID)
+		history, err := h.app.getHistoryURLsForUser(pcr.userID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		http.SetCookie(w, userCookie)
+		http.SetCookie(w, pcr.cookie)
 		w.Header().Set("content-type", "application/json")
 		w.WriteHeader(200)
 		_, errWrite := w.Write(history)
@@ -522,92 +347,14 @@ func (h *shortenerHandler) returnUserURLs() http.HandlerFunc {
 
 func (h *shortenerHandler) badRequest() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := int(rand.Int31())
-
-		// Process cookies
-		cookieName := "token"
-		userCookie, err := r.Cookie(cookieName)
-		if err != nil {
-			if !errors.Is(err, http.ErrNoCookie) {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			userCookie, err = h.createCookie(cookieName, userID)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			// Checking sign of cookie
-			curCookieValue := CookieData{}
-			cookieValueUnescaped, err := url.QueryUnescape(userCookie.Value)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			err = json.Unmarshal([]byte(cookieValueUnescaped), &curCookieValue)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			expectedToken := GetUserToken(curCookieValue.UserID)
-			signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
-			if !hmac.Equal(curCookieValue.Token, signedExpectedToken) {
-				userCookie, err = h.createCookie(cookieName, userID)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-			}
-		}
-		http.SetCookie(w, userCookie)
+		// Нужно ли в этом обработчике создавать куки? На функционал они не повлияют, но юзера можно зафиксировать уже здесь
 		w.WriteHeader(400)
 	}
 }
 
 func (h *shortenerHandler) pingToDB() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID := int(rand.Int31())
-
-		// Process cookies
-		cookieName := "token"
-		userCookie, err := r.Cookie(cookieName)
-		if err != nil {
-			if !errors.Is(err, http.ErrNoCookie) {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			userCookie, err = h.createCookie(cookieName, userID)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			// Checking sign of cookie
-			curCookieValue := CookieData{}
-			cookieValueUnescaped, err := url.QueryUnescape(userCookie.Value)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			err = json.Unmarshal([]byte(cookieValueUnescaped), &curCookieValue)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			expectedToken := GetUserToken(curCookieValue.UserID)
-			signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
-			if !hmac.Equal(curCookieValue.Token, signedExpectedToken) {
-				userCookie, err = h.createCookie(cookieName, userID)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-			}
-		}
-		http.SetCookie(w, userCookie)
+		// Нужно ли в этом обработчике создавать куки? На функционал они не повлияют, но юзера можно зафиксировать уже здесь
 		dbpool, err := pgxpool.Connect(context.Background(), h.app.DatabasePath)
 		if err != nil {
 			w.WriteHeader(500)
@@ -633,4 +380,44 @@ func (h *shortenerHandler) createCookie(cookieName string, userID int) (*http.Co
 	}
 
 	return userCookie, nil
+}
+
+func (h *shortenerHandler) processCookies(r *http.Request) (processCookieResult, error) {
+	userID := int(rand.Int31())
+
+	// Process cookies
+	cookieName := "token"
+	userCookie, err := r.Cookie(cookieName)
+	if err != nil {
+		if !errors.Is(err, http.ErrNoCookie) {
+			return processCookieResult{userID, nil}, err
+		}
+		userCookie, err = h.createCookie(cookieName, userID)
+		if err != nil {
+			return processCookieResult{userID, nil}, err
+		}
+	} else {
+		// Checking sign of cookie
+		curCookieValue := CookieData{}
+		cookieValueUnescaped, err := url.QueryUnescape(userCookie.Value)
+		if err != nil {
+			return processCookieResult{userID, nil}, err
+		}
+		err = json.Unmarshal([]byte(cookieValueUnescaped), &curCookieValue)
+		if err != nil {
+			return processCookieResult{userID, nil}, err
+		}
+		expectedToken := GetUserToken(curCookieValue.UserID)
+		signedExpectedToken := SignMsg([]byte(expectedToken), h.secKey)
+
+		if hmac.Equal(curCookieValue.Token, signedExpectedToken) {
+			userID = curCookieValue.UserID
+		} else {
+			userCookie, err = h.createCookie(cookieName, userID)
+			if err != nil {
+				return processCookieResult{userID, nil}, err
+			}
+		}
+	}
+	return processCookieResult{userID, userCookie}, nil
 }
