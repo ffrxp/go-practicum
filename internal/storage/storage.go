@@ -248,16 +248,6 @@ func (dbs *databaseStorage) AddBatchItems(ids []string, values []string, userID 
 	batchRes := dbs.pool.SendBatch(ctx, batch)
 	defer batchRes.Close()
 
-	ct, err := batchRes.Exec()
-	if err != nil {
-		log.Printf("Exec insert query error. Error message:%s\n", err.Error())
-		return err
-	}
-	if ct.RowsAffected() != int64(len(ids)) {
-		log.Printf("Exec insert query error. The number of affected rows is not equal to the expected.")
-		return errors.New("the number of affected rows is not equal to the expected")
-	}
-
 	// Не совсем понял, нужно ли дополнять историю юзера в этом случае. Пока не делаю, т.к. некоторые вещи в этом не очевидны
 
 	return nil
