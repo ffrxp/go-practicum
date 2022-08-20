@@ -1,4 +1,4 @@
-package app
+package storage
 
 import (
 	"context"
@@ -17,11 +17,11 @@ import (
 )
 
 type Repository interface {
-	addItem(id string, value string, userID int) error
-	addBatchItems(ids []string, values []string, userID int) error
-	getItem(value string) (string, error)
-	getItemByID(ID string) (string, error)
-	getUserHistory(userID int) (History, error)
+	AddItem(id string, value string, userID int) error
+	AddBatchItems(ids []string, values []string, userID int) error
+	GetItem(value string) (string, error)
+	GetItemByID(ID string) (string, error)
+	GetUserHistory(userID int) (History, error)
 	Close() error
 }
 
@@ -64,7 +64,7 @@ func NewDataStorage(source string) *dataStorage {
 	return &ds
 }
 
-func (ms *dataStorage) addItem(id string, value string, userID int) error {
+func (ms *dataStorage) AddItem(id string, value string, userID int) error {
 	if _, ok := ms.storage[id]; ok {
 		return errors.New("already exists")
 	}
@@ -84,12 +84,12 @@ func (ms *dataStorage) addItem(id string, value string, userID int) error {
 	return nil
 }
 
-func (ms *dataStorage) addBatchItems(ids []string, values []string, userID int) error {
+func (ms *dataStorage) AddBatchItems(ids []string, values []string, userID int) error {
 	if len(ids) != len(values) {
 		return errors.New("number of id and values is not equal")
 	}
 	for i := 0; i < len(ids); i++ {
-		err := ms.addItem(ids[i], values[i], userID)
+		err := ms.AddItem(ids[i], values[i], userID)
 		if err != nil {
 			return err
 		}
@@ -97,7 +97,7 @@ func (ms *dataStorage) addBatchItems(ids []string, values []string, userID int) 
 	return nil
 }
 
-func (ms *dataStorage) getItem(value string) (string, error) {
+func (ms *dataStorage) GetItem(value string) (string, error) {
 	for key, val := range ms.storage {
 		if val == value {
 			return key, nil
@@ -106,7 +106,7 @@ func (ms *dataStorage) getItem(value string) (string, error) {
 	return "", errors.New("not found")
 }
 
-func (ms *dataStorage) getItemByID(ID string) (string, error) {
+func (ms *dataStorage) GetItemByID(ID string) (string, error) {
 	for key, val := range ms.storage {
 		if key == ID {
 			return val, nil
@@ -146,7 +146,7 @@ func (ms *dataStorage) addItemUserHistory(id string, value string, userID int) {
 	ms.userHistoryStorage[userID] = append(ms.userHistoryStorage[userID], URLConversion{value, id})
 }
 
-func (ms *dataStorage) getUserHistory(userID int) (History, error) {
+func (ms *dataStorage) GetUserHistory(userID int) (History, error) {
 	history, ok := ms.userHistoryStorage[userID]
 	if !ok {
 		return make(History, 0), nil
@@ -190,7 +190,7 @@ func (dbs *databaseStorage) Close() error {
 	return nil
 }
 
-func (dbs *databaseStorage) addItem(id string, value string, userID int) error {
+func (dbs *databaseStorage) AddItem(id string, value string, userID int) error {
 	if _, err := dbs.pool.Exec(context.Background(),
 		"INSERT INTO convertions (short_url, orig_url) VALUES ($1, $2)", value, id); err != nil {
 		var pgErr *pgconn.PgError
@@ -208,7 +208,7 @@ func (dbs *databaseStorage) addItem(id string, value string, userID int) error {
 	return nil
 }
 
-func (dbs *databaseStorage) addBatchItems(ids []string, values []string, userID int) error {
+func (dbs *databaseStorage) AddBatchItems(ids []string, values []string, userID int) error {
 	// В документации pgx рекомендовано задавать в контексте ограничение по времени,
 	// т.к. при большом количестве запросов в batch возможен deadlock
 	batch := &pgx.Batch{}
@@ -227,7 +227,7 @@ func (dbs *databaseStorage) addBatchItems(ids []string, values []string, userID 
 }
 
 func (dbs *databaseStorage) addItemUserHistory(id string, value string, userID int) error {
-	history, err := dbs.getUserHistory(userID)
+	history, err := dbs.GetUserHistory(userID)
 	if err != nil && err.Error() != "not found" {
 		fmt.Println(err.Error())
 		return err
@@ -258,7 +258,7 @@ func (dbs *databaseStorage) addItemUserHistory(id string, value string, userID i
 	return nil
 }
 
-func (dbs *databaseStorage) getItem(value string) (string, error) {
+func (dbs *databaseStorage) GetItem(value string) (string, error) {
 	var origURL string
 	err := dbs.pool.QueryRow(context.Background(), "SELECT orig_url FROM convertions WHERE short_url = $1", value).Scan(&origURL)
 	if err != nil {
@@ -270,7 +270,7 @@ func (dbs *databaseStorage) getItem(value string) (string, error) {
 	return origURL, nil
 }
 
-func (dbs *databaseStorage) getItemByID(ID string) (string, error) {
+func (dbs *databaseStorage) GetItemByID(ID string) (string, error) {
 	var shortURL string
 	err := dbs.pool.QueryRow(context.Background(), "SELECT short_url FROM convertions WHERE orig_url = $1", ID).Scan(&shortURL)
 	if err != nil {
@@ -282,7 +282,7 @@ func (dbs *databaseStorage) getItemByID(ID string) (string, error) {
 	return shortURL, nil
 }
 
-func (dbs *databaseStorage) getUserHistory(userID int) (History, error) {
+func (dbs *databaseStorage) GetUserHistory(userID int) (History, error) {
 	var history History
 	err := dbs.pool.QueryRow(context.Background(), "SELECT history FROM histories WHERE user_id = $1", userID).Scan(&history)
 	if err != nil {

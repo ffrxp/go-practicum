@@ -1,8 +1,12 @@
-package app
+package test
 
 import (
 	"bytes"
 	"fmt"
+	"github.com/ffrxp/go-practicum/internal/app"
+	"github.com/ffrxp/go-practicum/internal/common"
+	"github.com/ffrxp/go-practicum/internal/handlers"
+	"github.com/ffrxp/go-practicum/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"io/ioutil"
@@ -34,7 +38,7 @@ func testRequest(t *testing.T, ts *httptest.Server, method, contentType, path st
 }
 
 func TestRouter(t *testing.T) {
-	config := InitConfig()
+	config := common.InitConfig()
 
 	type Want struct {
 		code        int
@@ -169,11 +173,11 @@ func TestRouter(t *testing.T) {
 		},
 	}
 
-	storage := NewDataStorage(config.StoragePath)
-	defer storage.Close()
-	sa := ShortenerApp{Storage: storage, BaseAddress: config.BaseAddress}
+	appStorage := storage.NewDataStorage(config.StoragePath)
+	defer appStorage.Close()
+	sa := app.ShortenerApp{Storage: appStorage, BaseAddress: config.BaseAddress}
 
-	h := NewShortenerHandler(&sa)
+	h := handlers.NewShortenerHandler(&sa)
 	ts := httptest.NewServer(h)
 	defer ts.Close()
 
