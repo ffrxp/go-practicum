@@ -50,7 +50,7 @@ func NewDataStorage(source string) *dataStorage {
 	}
 	file, err := os.OpenFile(source, os.O_RDWR|os.O_CREATE, 0777)
 	if err != nil {
-		log.Printf("Cannot open data file")
+		log.Printf("Cannot open data file. Path:%s\n", source)
 		return &dataStorage{make(map[int][]URLConversion), make(map[string]string), nil}
 	}
 	sfm := sourceFileManager{
@@ -65,18 +65,23 @@ func NewDataStorage(source string) *dataStorage {
 }
 
 func (ms *dataStorage) AddItem(id string, value string, userID int) error {
+	log.Printf("Add item to storage. Short URL:%s|Original URL:%s|User ID:%d\n", value, id, userID)
 	if _, ok := ms.storage[id]; ok {
+		log.Println("Result: conflict. Item already exist")
 		return errors.New("already exists")
 	}
 	ms.storage[id] = value
 	if ms.sfm != nil {
 		if err := ms.sfm.file.Truncate(0); err != nil {
+			log.Printf("Error processing \"Truncate\". Error message:%s", err.Error())
 			return err
 		}
 		if _, err := ms.sfm.file.Seek(0, 0); err != nil {
+			log.Printf("Error processing \"Seek\". Error message:%s", err.Error())
 			return err
 		}
 		if err := ms.sfm.encoder.Encode(&ms.storage); err != nil {
+			log.Printf("Error processing \"Encode\". Error message:%s", err.Error())
 			return err
 		}
 	}
@@ -85,8 +90,11 @@ func (ms *dataStorage) AddItem(id string, value string, userID int) error {
 }
 
 func (ms *dataStorage) AddBatchItems(ids []string, values []string, userID int) error {
+	log.Printf("Add batch items to storage.\n")
 	if len(ids) != len(values) {
-		return errors.New("number of id and values is not equal")
+		err := errors.New("number of id and values is not equal")
+		log.Printf("Error adding batch items. Error message:%s\n", err.Error())
+		return err
 	}
 	for i := 0; i < len(ids); i++ {
 		err := ms.AddItem(ids[i], values[i], userID)
@@ -98,34 +106,43 @@ func (ms *dataStorage) AddBatchItems(ids []string, values []string, userID int) 
 }
 
 func (ms *dataStorage) GetItem(value string) (string, error) {
+	log.Printf("Get original URL by short URL. Short URL:%s\n", value)
 	for key, val := range ms.storage {
 		if val == value {
 			return key, nil
 		}
 	}
-	return "", errors.New("not found")
+	err := errors.New("not found")
+	log.Printf("Item not found. Error message:%s\n", err.Error())
+	return "", err
 }
 
 func (ms *dataStorage) GetItemByID(ID string) (string, error) {
+	log.Printf("Get short URL by original URL. Original URL:%s\n", ID)
 	for key, val := range ms.storage {
 		if key == ID {
 			return val, nil
 		}
 	}
-	return "", errors.New("not found")
+	err := errors.New("not found")
+	log.Printf("Item not found. Error message:%s\n", err.Error())
+	return "", err
 }
 
 func (ms *dataStorage) loadItems() error {
+	log.Printf("Loading storage items\n")
 	if ms.sfm == nil {
 		return nil
 	}
 	if err := ms.sfm.decoder.Decode(&ms.storage); err != nil {
+		log.Printf("Error loading items from storage. Error message:%s\n", err.Error())
 		return err
 	}
 	return nil
 }
 
 func (ms *dataStorage) addItemUserHistory(id string, value string, userID int) {
+	log.Printf("Add item to user history. Short URL:%s|Original URL:%s|User ID:%d\n", value, id, userID)
 	history, ok := ms.userHistoryStorage[userID]
 	if ok {
 		found := false
@@ -147,6 +164,7 @@ func (ms *dataStorage) addItemUserHistory(id string, value string, userID int) {
 }
 
 func (ms *dataStorage) GetUserHistory(userID int) (History, error) {
+	log.Printf("Get user history. User ID:%d\n", userID)
 	history, ok := ms.userHistoryStorage[userID]
 	if !ok {
 		return make(History, 0), nil
@@ -174,11 +192,13 @@ func NewDatabaseStorage(source string) (*databaseStorage, error) {
 	queryCreateConv := "CREATE TABLE IF NOT EXISTS convertions " +
 		"(short_url character varying(2048) NOT NULL PRIMARY KEY, orig_url character varying(2048) NOT NULL)"
 	if _, err := dbpool.Exec(context.Background(), queryCreateConv); err != nil {
+		log.Printf("Cannot create convertions table")
 		return nil, err
 	}
 	queryCreateHistories := "CREATE TABLE IF NOT EXISTS histories " +
 		"(user_id integer NOT NULL PRIMARY KEY, history text NOT NULL)"
 	if _, err := dbpool.Exec(context.Background(), queryCreateHistories); err != nil {
+		log.Printf("Cannot create histories table")
 		return nil, err
 	}
 
@@ -191,15 +211,22 @@ func (dbs *databaseStorage) Close() error {
 }
 
 func (dbs *databaseStorage) AddItem(id string, value string, userID int) error {
+	// Я рассматривал вариант, чтобы сделать ON CONFLICT DO UPDATE, но мне показалось,
+	// что логика будет менее очевидной. В итоге остановился на текущем варианте,
+	// тем более что на выбор предлагались оба варианта.
+	log.Printf("Add item to database. Short URL:%s|Original URL:%s|User ID:%d\n", value, id, userID)
 	if _, err := dbs.pool.Exec(context.Background(),
 		"INSERT INTO convertions (short_url, orig_url) VALUES ($1, $2)", value, id); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			if pgErr.Code == pgerrcode.UniqueViolation {
+				log.Println("Result: conflict. Item already exist")
 				return errors.New("already exists")
 			}
+			log.Printf("Result: error. Error message:%s\n", err.Error())
 			return err
 		}
+		log.Printf("Result: error. Error message:%s\n", err.Error())
 		return err
 	}
 	if err := dbs.addItemUserHistory(id, value, userID); err != nil {
@@ -212,6 +239,7 @@ func (dbs *databaseStorage) AddBatchItems(ids []string, values []string, userID 
 	// В документации pgx рекомендовано задавать в контексте ограничение по времени,
 	// т.к. при большом количестве запросов в batch возможен deadlock
 	batch := &pgx.Batch{}
+	log.Printf("Add batch items to database.\n")
 	for i := 0; i < len(ids); i++ {
 		batch.Queue("INSERT INTO convertions (short_url, orig_url) VALUES ($1, $2)", values[i], ids[i])
 	}
@@ -221,15 +249,25 @@ func (dbs *databaseStorage) AddBatchItems(ids []string, values []string, userID 
 	batchRes := dbs.pool.SendBatch(ctx, batch)
 	defer batchRes.Close()
 
+	ct, err := batchRes.Exec()
+	if err != nil {
+		log.Printf("Exec insert query error. Error message:%s\n", err.Error())
+		return err
+	}
+	if ct.RowsAffected() != int64(len(ids)) {
+		log.Printf("Exec insert query error. The number of affected rows is not equal to the expected.")
+		return errors.New("the number of affected rows is not equal to the expected")
+	}
+
 	// Не совсем понял, нужно ли дополнять историю юзера в этом случае. Пока не делаю, т.к. некоторые вещи в этом не очевидны
 
 	return nil
 }
 
 func (dbs *databaseStorage) addItemUserHistory(id string, value string, userID int) error {
+	log.Printf("Add item to user history. Short URL:%s|Original URL:%s|User ID:%d\n", value, id, userID)
 	history, err := dbs.GetUserHistory(userID)
 	if err != nil && err.Error() != "not found" {
-		fmt.Println(err.Error())
 		return err
 	}
 	if len(history) > 0 {
@@ -246,6 +284,7 @@ func (dbs *databaseStorage) addItemUserHistory(id string, value string, userID i
 		history = append(history, URLConversion{value, id})
 		if _, err := dbs.pool.Exec(context.Background(),
 			"UPDATE histories SET history = $1 WHERE user_id = $2", history, userID); err != nil {
+			log.Printf("Exec update query error. Error message:%s\n", err.Error())
 			return err
 		}
 		return nil
@@ -253,6 +292,7 @@ func (dbs *databaseStorage) addItemUserHistory(id string, value string, userID i
 	history = append(history, URLConversion{value, id})
 	if _, err := dbs.pool.Exec(context.Background(),
 		"INSERT INTO histories (user_id, history) VALUES ($1, $2)", userID, history); err != nil {
+		log.Printf("Exec insert query error. Error message:%s\n", err.Error())
 		return err
 	}
 	return nil
@@ -260,11 +300,14 @@ func (dbs *databaseStorage) addItemUserHistory(id string, value string, userID i
 
 func (dbs *databaseStorage) GetItem(value string) (string, error) {
 	var origURL string
+	log.Printf("Get original URL by short URL. Short URL:%s\n", value)
 	err := dbs.pool.QueryRow(context.Background(), "SELECT orig_url FROM convertions WHERE short_url = $1", value).Scan(&origURL)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("Exec select query error. Error message:%s\n", err.Error())
 			return "", errors.New("not found")
 		}
+		log.Printf("Exec select query error. Error message:%s\n", err.Error())
 		return "", err
 	}
 	return origURL, nil
@@ -272,11 +315,14 @@ func (dbs *databaseStorage) GetItem(value string) (string, error) {
 
 func (dbs *databaseStorage) GetItemByID(ID string) (string, error) {
 	var shortURL string
+	log.Printf("Get short URL by original URL. Original URL:%s\n", ID)
 	err := dbs.pool.QueryRow(context.Background(), "SELECT short_url FROM convertions WHERE orig_url = $1", ID).Scan(&shortURL)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("Exec select query error. Error message:%s\n", err.Error())
 			return "", errors.New("not found")
 		}
+		log.Printf("Exec select query error. Error message:%s\n", err.Error())
 		return "", err
 	}
 	return shortURL, nil
@@ -284,11 +330,14 @@ func (dbs *databaseStorage) GetItemByID(ID string) (string, error) {
 
 func (dbs *databaseStorage) GetUserHistory(userID int) (History, error) {
 	var history History
+	log.Printf("Get user history. User ID:%d\n", userID)
 	err := dbs.pool.QueryRow(context.Background(), "SELECT history FROM histories WHERE user_id = $1", userID).Scan(&history)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("Exec select query error. Error message:%s\n", err.Error())
 			return make(History, 0), errors.New("not found")
 		}
+		log.Printf("Exec select query error. Error message:%s\n", err.Error())
 		return make(History, 0), err
 	}
 	return history, nil
@@ -312,10 +361,12 @@ func (history *History) Scan(value interface{}) error {
 	}
 	sv, err := driver.String.ConvertValue(value)
 	if err != nil {
+		log.Printf("Cannot scan value. Error message:%s\n", err.Error())
 		return fmt.Errorf("cannot scan value. %w", err)
 	}
 	v, ok := sv.(string)
 	if !ok {
+		log.Printf("Cannot scan value. Cannot convert value to string. Error message:%s\n", err.Error())
 		return errors.New("cannot scan value. cannot convert value to string")
 	}
 	textPairs := strings.Split(v, "|")
