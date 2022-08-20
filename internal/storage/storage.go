@@ -201,7 +201,6 @@ func NewDatabaseStorage(source string) (*databaseStorage, error) {
 		log.Printf("Cannot create histories table")
 		return nil, err
 	}
-
 	return &databaseStorage{dbpool}, nil
 }
 
