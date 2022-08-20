@@ -351,7 +351,6 @@ func (h *shortenerHandler) createCookie(cookieName string, userID int) (*http.Co
 		Value:  url.QueryEscape(string(JSONCookieBody)),
 		MaxAge: 1200,
 	}
-
 	return userCookie, nil
 }
 
