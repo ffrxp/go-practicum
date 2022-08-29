@@ -53,6 +53,7 @@ type ItemResult struct {
 }
 
 var ErrEmptyResult = errors.New("storage: empty result")
+var ErrAlreadyExist = errors.New("storage: already exist")
 
 func NewDataStorage(source string) *dataStorage {
 	if source == "" {
@@ -87,7 +88,8 @@ func (ms *dataStorage) AddItem(id string, value string, userID int) error {
 	log.Printf("Add item to storage. Short URL:%s|Original URL:%s|User ID:%d\n", value, id, userID)
 	if _, ok := ms.storage[id]; ok {
 		log.Println("Result: conflict. Item already exist")
-		return errors.New("already exists")
+		err := ErrAlreadyExist
+		return err
 	}
 	ms.storage[id] = value
 	ms.deletedURLs[value] = false
@@ -141,7 +143,7 @@ func (ms *dataStorage) AddBatchItems(ids []string, values []string, userID int) 
 }
 
 func (ms *dataStorage) MarkDeleteBatchItems(ids []string) error {
-	log.Printf("Mark delete batch items in storage.\n")
+	log.Printf("Mark delete batch items in storage: %s.\n", ids)
 	for _, id := range ids {
 		ms.deletedURLs[id] = true
 	}
@@ -167,14 +169,13 @@ func (ms *dataStorage) GetItem(value string) (*ItemResult, error) {
 
 func (ms *dataStorage) GetItemByID(ID string) (*ItemResult, error) {
 	log.Printf("Get short URL by original URL. Original URL:%s\n", ID)
-	for key, val := range ms.storage {
-		if key == ID {
-			return &ItemResult{val, ms.deletedURLs[val]}, nil
-		}
+	val, exist := ms.storage[ID]
+	if !exist {
+		err := ErrEmptyResult
+		log.Printf("Item not found. Error message:%s\n", err.Error())
+		return nil, err
 	}
-	err := ErrEmptyResult
-	log.Printf("Item not found. Error message:%s\n", err.Error())
-	return nil, err
+	return &ItemResult{val, ms.deletedURLs[val]}, nil
 }
 
 func (ms *dataStorage) loadItems() error {
@@ -240,20 +241,24 @@ type databaseStorage struct {
 }
 
 func NewDatabaseStorage(source string) (*databaseStorage, error) {
-	dbpool, err := pgxpool.Connect(context.Background(), source)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancelFunc()
+
+	dbpool, err := pgxpool.Connect(ctx, source)
 	if err != nil {
 		log.Printf("Cannot connect to database")
 		return nil, err
 	}
+
 	queryCreateConv := "CREATE TABLE IF NOT EXISTS convertions " +
 		"(short_url character varying(2048) NOT NULL PRIMARY KEY, orig_url character varying(2048) NOT NULL, deleted boolean)"
-	if _, err := dbpool.Exec(context.Background(), queryCreateConv); err != nil {
+	if _, err := dbpool.Exec(ctx, queryCreateConv); err != nil {
 		log.Printf("Cannot create convertions table")
 		return nil, err
 	}
 	queryCreateHistories := "CREATE TABLE IF NOT EXISTS histories " +
 		"(user_id integer NOT NULL PRIMARY KEY, history text NOT NULL)"
-	if _, err := dbpool.Exec(context.Background(), queryCreateHistories); err != nil {
+	if _, err := dbpool.Exec(ctx, queryCreateHistories); err != nil {
 		log.Printf("Cannot create histories table")
 		return nil, err
 	}
@@ -270,13 +275,17 @@ func (dbs *databaseStorage) AddItem(id string, value string, userID int) error {
 	// что логика будет менее очевидной. В итоге остановился на текущем варианте,
 	// тем более что на выбор предлагались оба варианта.
 	log.Printf("Add item to database. Short URL:%s|Original URL:%s|User ID:%d\n", value, id, userID)
-	if _, err := dbs.pool.Exec(context.Background(),
+
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancelFunc()
+	if _, err := dbs.pool.Exec(ctx,
 		"INSERT INTO convertions (short_url, orig_url, deleted) VALUES ($1, $2, $3)", value, id, false); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			if pgErr.Code == pgerrcode.UniqueViolation {
 				log.Println("Result: conflict. Item already exist")
-				return errors.New("already exists")
+				err := ErrAlreadyExist
+				return err
 			}
 			log.Printf("Result: error. Error message:%s\n", err.Error())
 			return err
@@ -291,8 +300,6 @@ func (dbs *databaseStorage) AddItem(id string, value string, userID int) error {
 }
 
 func (dbs *databaseStorage) AddBatchItems(ids []string, values []string, userID int) error {
-	// В документации pgx рекомендовано задавать в контексте ограничение по времени,
-	// т.к. при большом количестве запросов в batch возможен deadlock
 	batch := &pgx.Batch{}
 	log.Printf("Add batch items to database.\n")
 	for i := 0; i < len(ids); i++ {
@@ -325,6 +332,10 @@ func (dbs *databaseStorage) MarkDeleteBatchItems(ids []string) error {
 
 func (dbs *databaseStorage) addItemUserHistory(id string, value string, userID int) error {
 	log.Printf("Add item to user history. Short URL:%s|Original URL:%s|User ID:%d\n", value, id, userID)
+
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancelFunc()
+
 	history, err := dbs.GetUserHistory(userID)
 	if err != nil && !errors.Is(err, ErrEmptyResult) {
 		return err
@@ -341,7 +352,7 @@ func (dbs *databaseStorage) addItemUserHistory(id string, value string, userID i
 			return nil
 		}
 		history = append(history, URLConversion{value, id})
-		if _, err := dbs.pool.Exec(context.Background(),
+		if _, err := dbs.pool.Exec(ctx,
 			"UPDATE histories SET history = $1 WHERE user_id = $2", history, userID); err != nil {
 			log.Printf("Exec update query error. Error message:%s\n", err.Error())
 			return err
@@ -349,7 +360,7 @@ func (dbs *databaseStorage) addItemUserHistory(id string, value string, userID i
 		return nil
 	}
 	history = append(history, URLConversion{value, id})
-	if _, err := dbs.pool.Exec(context.Background(),
+	if _, err := dbs.pool.Exec(ctx,
 		"INSERT INTO histories (user_id, history) VALUES ($1, $2)", userID, history); err != nil {
 		log.Printf("Exec insert query error. Error message:%s\n", err.Error())
 		return err
@@ -361,7 +372,11 @@ func (dbs *databaseStorage) GetItem(value string) (*ItemResult, error) {
 	var origURL string
 	var deleted bool
 	log.Printf("Get original URL by short URL. Short URL:%s\n", value)
-	err := dbs.pool.QueryRow(context.Background(), "SELECT orig_url, deleted FROM convertions WHERE short_url = $1", value).Scan(&origURL, &deleted)
+
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancelFunc()
+
+	err := dbs.pool.QueryRow(ctx, "SELECT orig_url, deleted FROM convertions WHERE short_url = $1", value).Scan(&origURL, &deleted)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			log.Printf("Exec select query error. Error message:%s\n", err.Error())
@@ -377,7 +392,11 @@ func (dbs *databaseStorage) GetItemByID(ID string) (*ItemResult, error) {
 	var shortURL string
 	var deleted bool
 	log.Printf("Get short URL by original URL. Original URL:%s\n", ID)
-	err := dbs.pool.QueryRow(context.Background(), "SELECT short_url, deleted FROM convertions WHERE orig_url = $1", ID).Scan(&shortURL, &deleted)
+
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancelFunc()
+
+	err := dbs.pool.QueryRow(ctx, "SELECT short_url, deleted FROM convertions WHERE orig_url = $1", ID).Scan(&shortURL, &deleted)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			log.Printf("Exec select query error. Error message:%s\n", err.Error())
@@ -392,7 +411,11 @@ func (dbs *databaseStorage) GetItemByID(ID string) (*ItemResult, error) {
 func (dbs *databaseStorage) GetUserHistory(userID int) (History, error) {
 	var history History
 	log.Printf("Get user history. User ID:%d\n", userID)
-	err := dbs.pool.QueryRow(context.Background(), "SELECT history FROM histories WHERE user_id = $1", userID).Scan(&history)
+
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancelFunc()
+
+	err := dbs.pool.QueryRow(ctx, "SELECT history FROM histories WHERE user_id = $1", userID).Scan(&history)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			log.Printf("Exec select query error. Error message:%s\n", err.Error())

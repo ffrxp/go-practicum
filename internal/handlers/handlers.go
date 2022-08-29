@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/ffrxp/go-practicum/internal/app"
 	"github.com/ffrxp/go-practicum/internal/common"
+	"github.com/ffrxp/go-practicum/internal/storage"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"golang.org/x/sync/errgroup"
@@ -126,7 +127,7 @@ func (h *shortenerHandler) postURLCommon() http.HandlerFunc {
 		resultStatus := 201
 		resultURL, errCreating := h.app.CreateShortURL(string(body), pcr.userID)
 		if errCreating != nil {
-			if errCreating.Error() == "already exists" {
+			if errors.Is(errCreating, storage.ErrAlreadyExist) {
 				resultURL, err = h.app.GetExistShortURL(string(body))
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusBadRequest)
@@ -179,7 +180,7 @@ func (h *shortenerHandler) postURLByJSON() http.HandlerFunc {
 		resultStatus := 201
 		resultURL, errCreating := h.app.CreateShortURL(requestParsedBody.URL, pcr.userID)
 		if errCreating != nil {
-			if errCreating.Error() == "already exists" {
+			if errors.Is(errCreating, storage.ErrAlreadyExist) {
 				resultURL, err = h.app.GetExistShortURL(requestParsedBody.URL)
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusBadRequest)
@@ -374,8 +375,6 @@ func (h *shortenerHandler) deleteURLs() http.HandlerFunc {
 			http.Error(w, "Cannot unmarshal JSON request", http.StatusBadRequest)
 			return
 		}
-		fmt.Println("requestURLs:") // TODO: del it. temp
-		fmt.Println(requestURLs)    // TODO: del it. temp
 
 		go h.processURLsForDelete(requestURLs, pcr.userID)
 		w.WriteHeader(202)
@@ -383,7 +382,6 @@ func (h *shortenerHandler) deleteURLs() http.HandlerFunc {
 }
 
 func (h *shortenerHandler) processURLsForDelete(URLs []string, userID int) {
-	fmt.Println("Start gorutine processor all URLs for delete") // TODO: del it. temp
 	requestURLsNum := len(URLs)
 	requestURLsChan := make(chan string, requestURLsNum)
 	for _, URLForDel := range URLs {
@@ -395,11 +393,7 @@ func (h *shortenerHandler) processURLsForDelete(URLs []string, userID int) {
 	g := &errgroup.Group{}
 	for i := 0; i < requestURLsNum; i++ {
 		g.Go(func() error {
-			fmt.Println("Start gorutine processor URL") // TODO: del it. temp
 			URLForDel := <-requestURLsChan
-			fmt.Println("Processor URL", URLForDel) // TODO: del it. temp
-
-			//URLForDel = URLForDel[len(h.app.BaseAddress):]
 
 			// Check if URL exist in DB and can be marked for delete by this user
 			allowedForDel, err := h.app.UserHaveURLinHistory(userID, URLForDel)
@@ -408,7 +402,6 @@ func (h *shortenerHandler) processURLsForDelete(URLs []string, userID int) {
 				return fmt.Errorf("error in checking if URL belong to user: %w", err)
 			}
 			if !allowedForDel {
-				fmt.Println("Processor URL. Not allowed for del", URLForDel) // TODO: del it. temp
 				return nil
 			}
 			URLExist, err := h.app.ShortURLExist(URLForDel)
@@ -416,25 +409,20 @@ func (h *shortenerHandler) processURLsForDelete(URLs []string, userID int) {
 				return fmt.Errorf("error in checking URL existing: %w", err)
 			}
 			if !URLExist {
-				fmt.Println("Processor URL. Not exist", URLForDel) // TODO: del it. temp
 				return nil
 			}
-			fmt.Println("Processor URL put to channel", URLForDel) // TODO: del it. temp
 			delURLsChan <- URLForDel
 			return nil
 		})
 	}
 	go func() {
-		fmt.Println("waitener start") // TODO: del it. temp
 		if err := g.Wait(); err != nil {
 			log.Println(err)
 			errChan <- err
 			return
 		}
 
-		fmt.Println("end waiting") // TODO: del it. temp
 		close(delURLsChan)
-		fmt.Println("waitener close channel delURLsChan") // TODO: del it. temp
 	}()
 
 	var checkedURLsForDel []string
