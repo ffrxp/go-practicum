@@ -351,7 +351,6 @@ func (h *shortenerHandler) pingToDB() http.HandlerFunc {
 
 func (h *shortenerHandler) deleteURLs() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("[!] Start deleteURLs handler") // TODO: del it. temp
 		pcr, err := h.processCookies(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -378,13 +377,7 @@ func (h *shortenerHandler) deleteURLs() http.HandlerFunc {
 		fmt.Println("requestURLs:") // TODO: del it. temp
 		fmt.Println(requestURLs)    // TODO: del it. temp
 
-		for _, URL := range requestURLs { // TODO: del it. temp
-			log.Printf("[!] URL:%s", URL) // TODO: del it. temp
-		} // TODO: del it. temp
-
-		log.Printf("[!] Start gorutine to delete handlers") // TODO: del it. temp
 		go h.processURLsForDelete(requestURLs, pcr.userID)
-		log.Printf("[!] WriteHeader") // TODO: del it. temp
 		w.WriteHeader(202)
 	}
 }
