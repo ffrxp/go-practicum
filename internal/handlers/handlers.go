@@ -402,7 +402,7 @@ func (h *shortenerHandler) processURLsForDelete(URLs []string, userID int) {
 			allowedForDel, err := h.app.UserHaveURLinHistory(userID, URLForDel)
 			if err != nil {
 
-				return fmt.Errorf("Error in checking if URL belong to user: %w", err)
+				return fmt.Errorf("error in checking if URL belong to user: %w", err)
 			}
 			if !allowedForDel {
 				fmt.Println("Processor URL. Not allowed for del", URLForDel) // TODO: del it. temp
@@ -410,7 +410,7 @@ func (h *shortenerHandler) processURLsForDelete(URLs []string, userID int) {
 			}
 			URLExist, err := h.app.ShortURLExist(URLForDel)
 			if err != nil {
-				return fmt.Errorf("Error in checking URL existing: %w", err)
+				return fmt.Errorf("error in checking URL existing: %w", err)
 			}
 			if !URLExist {
 				fmt.Println("Processor URL. Not exist", URLForDel) // TODO: del it. temp

@@ -195,7 +195,7 @@ func (ms *dataStorage) GetUserHistory(userID int) (History, error) {
 	log.Printf("Get user history. User ID:%d\n", userID)
 	history, ok := ms.userHistoryStorage[userID]
 	if !ok {
-		return make(History, 0), nil
+		return make(History, 0), ErrEmptyResult
 	}
 	return history, nil
 }
