@@ -90,26 +90,37 @@ func (ms *dataStorage) AddItem(id string, value string, userID int) error {
 		return errors.New("already exists")
 	}
 	ms.storage[id] = value
-	ms.deletedURLs[id] = false
+	ms.deletedURLs[value] = false
+	ms.addItemUserHistory(id, value, userID)
 	if ms.sfm != nil {
-		if err := ms.sfm.file.Truncate(0); err != nil {
-			log.Printf("Error processing \"Truncate\". Error message:%s", err.Error())
-			return err
-		}
-		if _, err := ms.sfm.file.Seek(0, 0); err != nil {
-			log.Printf("Error processing \"Seek\". Error message:%s", err.Error())
-			return err
-		}
-		if err := ms.sfm.encoder.Encode(&ms.storage); err != nil {
-			log.Printf("Error processing \"Encode\" URLs convertions. Error message:%s", err.Error())
-			return err
-		}
-		if err := ms.sfm.encoder.Encode(&ms.deletedURLs); err != nil {
-			log.Printf("Error processing \"Encode\" deleted URLs. Error message:%s", err.Error())
+		if err := ms.writeToFile(); err != nil {
 			return err
 		}
 	}
-	ms.addItemUserHistory(id, value, userID)
+	return nil
+}
+
+func (ms *dataStorage) writeToFile() error {
+	if err := ms.sfm.file.Truncate(0); err != nil {
+		log.Printf("Error processing \"Truncate\". Error message:%s", err.Error())
+		return err
+	}
+	if _, err := ms.sfm.file.Seek(0, 0); err != nil {
+		log.Printf("Error processing \"Seek\". Error message:%s", err.Error())
+		return err
+	}
+	if err := ms.sfm.encoder.Encode(&ms.storage); err != nil {
+		log.Printf("Error processing \"Encode\" URLs convertions. Error message:%s", err.Error())
+		return err
+	}
+	if err := ms.sfm.encoder.Encode(&ms.deletedURLs); err != nil {
+		log.Printf("Error processing \"Encode\" deleted URLs. Error message:%s", err.Error())
+		return err
+	}
+	if err := ms.sfm.encoder.Encode(&ms.userHistoryStorage); err != nil {
+		log.Printf("Error processing \"Encode\" user history. Error message:%s", err.Error())
+		return err
+	}
 	return nil
 }
 
@@ -134,6 +145,11 @@ func (ms *dataStorage) MarkDeleteBatchItems(ids []string) error {
 	for _, id := range ids {
 		ms.deletedURLs[id] = true
 	}
+	if ms.sfm != nil {
+		if err := ms.writeToFile(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -141,7 +157,7 @@ func (ms *dataStorage) GetItem(value string) (*ItemResult, error) {
 	log.Printf("Get original URL by short URL. Short URL:%s\n", value)
 	for key, val := range ms.storage {
 		if val == value {
-			return &ItemResult{key, ms.deletedURLs[key]}, nil
+			return &ItemResult{key, ms.deletedURLs[val]}, nil
 		}
 	}
 	err := ErrEmptyResult
@@ -153,7 +169,7 @@ func (ms *dataStorage) GetItemByID(ID string) (*ItemResult, error) {
 	log.Printf("Get short URL by original URL. Original URL:%s\n", ID)
 	for key, val := range ms.storage {
 		if key == ID {
-			return &ItemResult{val, ms.deletedURLs[key]}, nil
+			return &ItemResult{val, ms.deletedURLs[val]}, nil
 		}
 	}
 	err := ErrEmptyResult
@@ -171,7 +187,11 @@ func (ms *dataStorage) loadItems() error {
 		return err
 	}
 	if err := ms.sfm.decoder.Decode(&ms.deletedURLs); err != nil {
-		log.Printf("Error loading items from storage 11111. Error message:%s\n", err.Error())
+		log.Printf("Error loading items from storage. Error message:%s\n", err.Error())
+		return err
+	}
+	if err := ms.sfm.decoder.Decode(&ms.userHistoryStorage); err != nil {
+		log.Printf("Error loading items from storage. Error message:%s\n", err.Error())
 		return err
 	}
 	return nil
