@@ -6,10 +6,12 @@ import (
 	"crypto/hmac"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/ffrxp/go-practicum/internal/app"
 	"github.com/ffrxp/go-practicum/internal/common"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"log"
 	"math/rand"
@@ -35,8 +37,9 @@ func NewShortenerHandler(sa *app.ShortenerApp) shortenerHandler {
 	h.Mux.NotFound(h.badRequest())
 	h.Mux.MethodNotAllowed(h.badRequest())
 	h.Get("/{shortURL}", h.middlewareGzipper(h.getURL()))
-	h.Get("/api/user/urls", h.middlewareGzipper(h.returnUserURLs()))
 	h.Get("/ping", h.middlewareGzipper(h.pingToDB()))
+	h.Get("/api/user/urls", h.middlewareGzipper(h.returnUserURLs()))
+	h.Delete("/api/user/urls", h.middlewareGzipper(h.deleteURLs()))
 
 	h.secKey = []byte("some_secret_key")
 	return h
@@ -275,8 +278,16 @@ func (h *shortenerHandler) getURL() http.HandlerFunc {
 		}
 		origURL, err := h.app.GetOrigURL(paramURL)
 		if err != nil {
-			http.Error(w, "Cannot find full URL for this short URL", http.StatusBadRequest)
-			return
+			if errors.Is(err, app.ErrURLDeleted) {
+				w.WriteHeader(410)
+				return
+			} else if errors.Is(err, app.ErrCantFindURL) {
+				http.Error(w, "Cannot find full URL for this short URL", http.StatusBadRequest)
+				return
+			} else {
+				http.Error(w, fmt.Sprintf("Request error:%s", err.Error()), http.StatusBadRequest)
+				return
+			}
 		}
 		w.Header().Set("Location", origURL)
 		w.WriteHeader(307)
@@ -335,6 +346,113 @@ func (h *shortenerHandler) pingToDB() http.HandlerFunc {
 		}
 		defer dbpool.Close()
 		w.WriteHeader(200)
+	}
+}
+
+func (h *shortenerHandler) deleteURLs() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		pcr, err := h.processCookies(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		defer r.Body.Close()
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		ct := r.Header.Get("content-type")
+		if ct != "application/json" {
+			http.Error(w, "Invalid content type of request", http.StatusBadRequest)
+			return
+		}
+
+		var requestURLs []string
+		if err := json.Unmarshal(body, &requestURLs); err != nil {
+			http.Error(w, "Cannot unmarshal JSON request", http.StatusBadRequest)
+			return
+		}
+		fmt.Println("requestURLs:") // TODO: del it. temp
+		fmt.Println(requestURLs)    // TODO: del it. temp
+		go h.processURLsForDelete(requestURLs, pcr.userID)
+		w.WriteHeader(202)
+	}
+}
+
+func (h *shortenerHandler) processURLsForDelete(URLs []string, userID int) {
+	fmt.Println("Start gorutine processor all URLs for delete") // TODO: del it. temp
+	requestURLsNum := len(URLs)
+	requestURLsChan := make(chan string, requestURLsNum)
+	for _, URLForDel := range URLs {
+		requestURLsChan <- URLForDel
+	}
+	delURLsChan := make(chan string)
+	errChan := make(chan error)
+
+	g := &errgroup.Group{}
+	for i := 0; i < requestURLsNum; i++ {
+		g.Go(func() error {
+			fmt.Println("Start gorutine processor URL") // TODO: del it. temp
+			URLForDel := <-requestURLsChan
+			fmt.Println("Processor URL", URLForDel) // TODO: del it. temp
+			URLForDel = URLForDel[len(h.app.BaseAddress):]
+			// Check if URL exist in DB and can be marked for delete by this user
+			allowedForDel, err := h.app.UserHaveURLinHistory(userID, URLForDel)
+			if err != nil {
+
+				return fmt.Errorf("Error in checking if URL belong to user: %w", err)
+			}
+			if !allowedForDel {
+				fmt.Println("Processor URL. Not allowed for del", URLForDel) // TODO: del it. temp
+				return nil
+			}
+			URLExist, err := h.app.ShortURLExist(URLForDel)
+			if err != nil {
+				return fmt.Errorf("Error in checking URL existing: %w", err)
+			}
+			if !URLExist {
+				fmt.Println("Processor URL. Not exist", URLForDel) // TODO: del it. temp
+				return nil
+			}
+			fmt.Println("Processor URL put to channel", URLForDel) // TODO: del it. temp
+			delURLsChan <- URLForDel
+			return nil
+		})
+	}
+	go func() {
+		fmt.Println("waitener start") // TODO: del it. temp
+		if err := g.Wait(); err != nil {
+			log.Println(err)
+			errChan <- err
+			return
+		}
+
+		fmt.Println("end waiting") // TODO: del it. temp
+		close(delURLsChan)
+		fmt.Println("waitener close channel delURLsChan") // TODO: del it. temp
+	}()
+
+	var checkedURLsForDel []string
+loop:
+	for {
+		select {
+		case URLForDel, ok := <-delURLsChan:
+			if !ok {
+				break loop
+			}
+			checkedURLsForDel = append(checkedURLsForDel, URLForDel)
+		case err := <-errChan:
+			fmt.Println(err)
+			return
+		}
+	}
+	if len(checkedURLsForDel) > 0 {
+		err := h.app.MarkDeleteBatchURLs(checkedURLsForDel)
+		if err != nil {
+			log.Printf("Cannot delete batch URLs. Error message:%s\n", err.Error())
+		}
 	}
 }
 
