@@ -449,6 +449,7 @@ loop:
 			return
 		}
 	}
+
 	if len(checkedURLsForDel) > 0 {
 		err := h.app.MarkDeleteBatchURLs(checkedURLsForDel)
 		if err != nil {
