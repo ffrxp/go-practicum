@@ -398,7 +398,9 @@ func (h *shortenerHandler) processURLsForDelete(URLs []string, userID int) {
 			fmt.Println("Start gorutine processor URL") // TODO: del it. temp
 			URLForDel := <-requestURLsChan
 			fmt.Println("Processor URL", URLForDel) // TODO: del it. temp
-			URLForDel = URLForDel[len(h.app.BaseAddress):]
+
+			//URLForDel = URLForDel[len(h.app.BaseAddress):]
+
 			// Check if URL exist in DB and can be marked for delete by this user
 			allowedForDel, err := h.app.UserHaveURLinHistory(userID, URLForDel)
 			if err != nil {
