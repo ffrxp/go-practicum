@@ -90,6 +90,7 @@ func (ms *dataStorage) AddItem(id string, value string, userID int) error {
 		return errors.New("already exists")
 	}
 	ms.storage[id] = value
+	ms.deletedURLs[id] = false
 	if ms.sfm != nil {
 		if err := ms.sfm.file.Truncate(0); err != nil {
 			log.Printf("Error processing \"Truncate\". Error message:%s", err.Error())
@@ -100,11 +101,14 @@ func (ms *dataStorage) AddItem(id string, value string, userID int) error {
 			return err
 		}
 		if err := ms.sfm.encoder.Encode(&ms.storage); err != nil {
-			log.Printf("Error processing \"Encode\". Error message:%s", err.Error())
+			log.Printf("Error processing \"Encode\" URLs convertions. Error message:%s", err.Error())
+			return err
+		}
+		if err := ms.sfm.encoder.Encode(&ms.deletedURLs); err != nil {
+			log.Printf("Error processing \"Encode\" deleted URLs. Error message:%s", err.Error())
 			return err
 		}
 	}
-	ms.deletedURLs[id] = false
 	ms.addItemUserHistory(id, value, userID)
 	return nil
 }
@@ -164,6 +168,10 @@ func (ms *dataStorage) loadItems() error {
 	}
 	if err := ms.sfm.decoder.Decode(&ms.storage); err != nil {
 		log.Printf("Error loading items from storage. Error message:%s\n", err.Error())
+		return err
+	}
+	if err := ms.sfm.decoder.Decode(&ms.deletedURLs); err != nil {
+		log.Printf("Error loading items from storage 11111. Error message:%s\n", err.Error())
 		return err
 	}
 	return nil
