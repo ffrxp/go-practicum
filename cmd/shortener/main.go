@@ -1,20 +1,37 @@
 package main
 
 import (
-	"flag"
 	"github.com/ffrxp/go-practicum/internal/app"
+	"github.com/ffrxp/go-practicum/internal/common"
+	"github.com/ffrxp/go-practicum/internal/handlers"
+	"github.com/ffrxp/go-practicum/internal/storage"
 	"log"
 	"net/http"
 )
 
 func main() {
-	serverAddress := flag.String("a", app.GetServerAddress(), "Start server address.")
-	baseAddress := flag.String("b", app.GetBaseAddress(), "Base address for short URLs")
-	storagePath := flag.String("f", app.GetStoragePath(), "Path for storage of short URLs")
-	flag.Parse()
-
-	storage := app.NewDataStorage(*storagePath)
-	defer storage.Close()
-	sa := app.ShortenerApp{Storage: storage, BaseAddress: *baseAddress}
-	log.Fatal(http.ListenAndServe(*serverAddress, app.NewShortenerHandler(&sa)))
+	config := common.InitConfig()
+	if config.DatabasePath != "" {
+		appStorage, err := storage.NewDatabaseStorage(config.DatabasePath)
+		if err == nil {
+			defer appStorage.Close()
+			sa := app.ShortenerApp{Storage: appStorage,
+				BaseAddress:  config.BaseAddress,
+				DatabasePath: config.DatabasePath}
+			log.Fatal(http.ListenAndServe(config.ServerAddress, handlers.NewShortenerHandler(&sa)))
+		}
+		log.Printf("Can't connect to database or init tables. Error:%s", err.Error())
+		dataStorage := storage.NewDataStorage(config.StoragePath)
+		defer dataStorage.Close()
+		sa := app.ShortenerApp{Storage: dataStorage,
+			BaseAddress:  config.BaseAddress,
+			DatabasePath: config.DatabasePath}
+		log.Fatal(http.ListenAndServe(config.ServerAddress, handlers.NewShortenerHandler(&sa)))
+	}
+	dataStorage := storage.NewDataStorage(config.StoragePath)
+	defer dataStorage.Close()
+	sa := app.ShortenerApp{Storage: dataStorage,
+		BaseAddress:  config.BaseAddress,
+		DatabasePath: config.DatabasePath}
+	log.Fatal(http.ListenAndServe(config.ServerAddress, handlers.NewShortenerHandler(&sa)))
 }
