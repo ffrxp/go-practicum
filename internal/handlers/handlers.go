@@ -12,19 +12,20 @@ import (
 	"github.com/ffrxp/go-practicum/internal/storage"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v4/pgxpool"
-	"golang.org/x/sync/errgroup"
 	"io"
 	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type shortenerHandler struct {
 	*chi.Mux
-	app    *app.ShortenerApp
-	secKey []byte
+	app                   *app.ShortenerApp
+	secKey                []byte
+	URLsForDeleteDataChan chan URLsForDeleteData
 }
 
 func NewShortenerHandler(sa *app.ShortenerApp) shortenerHandler {
@@ -43,6 +44,9 @@ func NewShortenerHandler(sa *app.ShortenerApp) shortenerHandler {
 	h.Delete("/api/user/urls", h.middlewareGzipper(h.deleteURLs()))
 
 	h.secKey = []byte("some_secret_key")
+
+	h.URLsForDeleteDataChan = make(chan URLsForDeleteData)
+	go h.URLsForDeleteWorker()
 	return h
 }
 
@@ -77,6 +81,11 @@ type BatchResponseElem struct {
 type BatchAnswerElem struct {
 	CorrelationID string `json:"correlation_id"`
 	ShortURL      string `json:"short_url"`
+}
+
+type URLsForDeleteData struct {
+	URLs   []string
+	userID int
 }
 
 func (h *shortenerHandler) middlewareGzipper(next http.HandlerFunc) http.HandlerFunc {
@@ -352,7 +361,7 @@ func (h *shortenerHandler) pingToDB() http.HandlerFunc {
 
 func (h *shortenerHandler) deleteURLs() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		/*pcr, err := h.processCookies(r)
+		pcr, err := h.processCookies(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -375,171 +384,51 @@ func (h *shortenerHandler) deleteURLs() http.HandlerFunc {
 			http.Error(w, "Cannot unmarshal JSON request", http.StatusBadRequest)
 			return
 		}
-
-		go h.processURLsForDelete(requestURLs, pcr.userID)*/
-		go h.processHandlerDeleteURLs(r)
+		go func(URLs []string, userID int) {
+			h.URLsForDeleteDataChan <- URLsForDeleteData{URLs, userID}
+		}(requestURLs, pcr.userID)
 		w.WriteHeader(202)
 	}
 }
 
-func (h *shortenerHandler) processHandlerDeleteURLs(r *http.Request) {
-	pcr, err := h.processCookies(r)
-	if err != nil {
-		log.Println(err.Error())
-		return
-	}
-	body, err := io.ReadAll(r.Body)
-	defer r.Body.Close()
-
-	if err != nil {
-		log.Println(err.Error())
-		return
-	}
-	ct := r.Header.Get("content-type")
-	if ct != "application/json" {
-		log.Println("Invalid content type of request")
-		return
-	}
-
-	var requestURLs []string
-	if err := json.Unmarshal(body, &requestURLs); err != nil {
-		log.Println("Cannot unmarshal JSON request")
-		return
-	}
-	requestURLsNum := len(requestURLs)
-	requestURLsChan := make(chan string, requestURLsNum)
-	for _, URLForDel := range requestURLs {
-		requestURLsChan <- URLForDel
-	}
-	delURLsChan := make(chan string)
-	errChan := make(chan error)
-
-	g := &errgroup.Group{}
-	for i := 0; i < requestURLsNum; i++ {
-		g.Go(func() error {
-			URLForDel := <-requestURLsChan
-
-			// Check if URL exist in DB and can be marked for delete by this user
-			allowedForDel, err := h.app.UserHaveURLinHistory(pcr.userID, URLForDel)
-			if err != nil {
-
-				return fmt.Errorf("error in checking if URL belong to user: %w", err)
-			}
-			if !allowedForDel {
-				return nil
-			}
-			URLExist, err := h.app.ShortURLExist(URLForDel)
-			if err != nil {
-				return fmt.Errorf("error in checking URL existing: %w", err)
-			}
-			if !URLExist {
-				return nil
-			}
-			delURLsChan <- URLForDel
-			return nil
-		})
-	}
-	go func() {
-		if err := g.Wait(); err != nil {
-			log.Println(err)
-			errChan <- err
-			return
-		}
-
-		close(delURLsChan)
-	}()
-
+func (h *shortenerHandler) URLsForDeleteWorker() {
 	var checkedURLsForDel []string
-loop:
+
+	// Непонятно, на основании какого критерия нужно перестать собирать URL для выполнения batch запроса.
+	// Когда перестанут поступать URL в канал, по определнному количеству или по временному лимиту?
+	// Решил сделать по временному лимиту
+	ticker := time.NewTicker(5 * time.Second)
 	for {
 		select {
-		case URLForDel, ok := <-delURLsChan:
-			if !ok {
-				break loop
+		case data := <-h.URLsForDeleteDataChan:
+			for _, URLForDel := range data.URLs {
+				allowedForDel, err := h.app.UserHaveURLinHistory(data.userID, URLForDel)
+				if err != nil {
+					log.Printf("Error in checking if URL belong to user. Error message:%s\n", err.Error())
+				}
+				if !allowedForDel {
+					continue
+				}
+				URLExist, err := h.app.ShortURLExist(URLForDel)
+				if err != nil {
+					log.Printf("Error in checking URL existing. Error message:%s\n", err.Error())
+				}
+				if !URLExist {
+					continue
+				}
+				checkedURLsForDel = append(checkedURLsForDel, URLForDel)
 			}
-			checkedURLsForDel = append(checkedURLsForDel, URLForDel)
-		case err := <-errChan:
-			fmt.Println(err)
-			return
-		}
-	}
-
-	if len(checkedURLsForDel) > 0 {
-		err := h.app.MarkDeleteBatchURLs(checkedURLsForDel)
-		if err != nil {
-			log.Printf("Cannot delete batch URLs. Error message:%s\n", err.Error())
+		case <-ticker.C:
+			if len(checkedURLsForDel) > 0 {
+				err := h.app.MarkDeleteBatchURLs(checkedURLsForDel)
+				checkedURLsForDel = nil
+				if err != nil {
+					log.Printf("Cannot delete batch URLs. Error message:%s\n", err.Error())
+				}
+			}
 		}
 	}
 }
-
-/*
-func (h *shortenerHandler) processURLsForDelete(URLs []string, userID int) {
-	requestURLsNum := len(URLs)
-	requestURLsChan := make(chan string, requestURLsNum)
-	for _, URLForDel := range URLs {
-		requestURLsChan <- URLForDel
-	}
-	delURLsChan := make(chan string)
-	errChan := make(chan error)
-
-	g := &errgroup.Group{}
-	for i := 0; i < requestURLsNum; i++ {
-		g.Go(func() error {
-			URLForDel := <-requestURLsChan
-
-			// Check if URL exist in DB and can be marked for delete by this user
-			allowedForDel, err := h.app.UserHaveURLinHistory(userID, URLForDel)
-			if err != nil {
-
-				return fmt.Errorf("error in checking if URL belong to user: %w", err)
-			}
-			if !allowedForDel {
-				return nil
-			}
-			URLExist, err := h.app.ShortURLExist(URLForDel)
-			if err != nil {
-				return fmt.Errorf("error in checking URL existing: %w", err)
-			}
-			if !URLExist {
-				return nil
-			}
-			delURLsChan <- URLForDel
-			return nil
-		})
-	}
-	go func() {
-		if err := g.Wait(); err != nil {
-			log.Println(err)
-			errChan <- err
-			return
-		}
-
-		close(delURLsChan)
-	}()
-
-	var checkedURLsForDel []string
-loop:
-	for {
-		select {
-		case URLForDel, ok := <-delURLsChan:
-			if !ok {
-				break loop
-			}
-			checkedURLsForDel = append(checkedURLsForDel, URLForDel)
-		case err := <-errChan:
-			fmt.Println(err)
-			return
-		}
-	}
-
-	if len(checkedURLsForDel) > 0 {
-		err := h.app.MarkDeleteBatchURLs(checkedURLsForDel)
-		if err != nil {
-			log.Printf("Cannot delete batch URLs. Error message:%s\n", err.Error())
-		}
-	}
-}
-*/
 
 func (h *shortenerHandler) createCookie(cookieName string, userID int) (*http.Cookie, error) {
 	token := common.GetUserToken(userID)
